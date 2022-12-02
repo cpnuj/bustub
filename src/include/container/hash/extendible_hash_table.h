@@ -182,6 +182,10 @@ class ExtendibleHashTable : public HashTable<K, V> {
    */
   auto RedistributeBucket(std::shared_ptr<Bucket> bucket) -> void;
 
+  auto Split(std::shared_ptr<Bucket> bucket) -> void;
+
+  auto Extend() -> void;
+
   /*****************************************************************
    * Must acquire latch_ first before calling the below functions. *
    *****************************************************************/
