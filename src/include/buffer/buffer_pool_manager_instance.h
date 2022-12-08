@@ -177,5 +177,14 @@ class BufferPoolManagerInstance : public BufferPoolManager {
   }
 
   // TODO(student): You may add additional private members and helper functions
+
+ private:
+  // FIXME(junp): Replace it with extendible hash table
+  std::unordered_map<page_id_t, frame_id_t> page_table_tmp_;
+
+  void ResetPageMeta(Page *page, page_id_t page_id);
+
+  auto GetFreeFrameInternal(frame_id_t *frame_id) -> bool;
+  auto GetFreeFrame(frame_id_t *frame_id) -> bool;
 };
 }  // namespace bustub
