@@ -17,12 +17,14 @@
 #include <mutex>  // NOLINT
 #include <unordered_map>
 #include <vector>
+#include <ctime>
+#include <algorithm>
+#include <unordered_set>
 
 #include "common/config.h"
 #include "common/macros.h"
 
 namespace bustub {
-
 /**
  * LRUKReplacer implements the LRU-k replacement policy.
  *
@@ -140,6 +142,27 @@ class LRUKReplacer {
   [[maybe_unused]] size_t replacer_size_;
   [[maybe_unused]] size_t k_;
   std::mutex latch_;
+
+  using history_t = std::vector<std::size_t>;
+  std::vector<history_t> access_history_;
+  std::unordered_set<frame_id_t> candidates_;
+
+  auto Distance(frame_id_t f) const -> size_t {
+    history_t const &history = access_history_[f];
+    if (history.size() < k_) {
+      return std::numeric_limits<size_t>::max();
+    }
+    return history.back() - history.front();
+  }
+
+  auto LastAccess(frame_id_t f) const -> size_t { return access_history_[f].back(); }
+
+  auto CompareFrame(frame_id_t f1, frame_id_t f2) const -> bool {
+    size_t d1 = Distance(f1);
+    size_t d2 = Distance(f2);
+    if (d1 != d2) { return d1 > d2; }
+    return LastAccess(f1) < LastAccess(f2);
+  }
 };
 
 }  // namespace bustub

@@ -136,11 +136,12 @@ class TrieNode {
    * @return Pointer to unique_ptr of the child node, nullptr if child
    *         node does not exist.
    */
+
   std::unique_ptr<TrieNode> *GetChildNode(char key_char) {
-    if (children_.find(key_char) == children_.end()) {
-      return nullptr;
+    if (auto search = children_.find(key_char); search != children_.end()) {
+      return &search->second;
     }
-    return &children_[key_char];
+    return nullptr;
   }
 
   /**
