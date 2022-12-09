@@ -22,6 +22,7 @@
 #include <mutex>  // NOLINT
 #include <utility>
 #include <vector>
+#include <functional>
 
 #include "container/hash/hash_table.h"
 
@@ -104,6 +105,8 @@ class ExtendibleHashTable : public HashTable<K, V> {
    * @return True if the key exists, false otherwise.
    */
   auto Remove(const K &key) -> bool override;
+
+  void ForEach(std::function<void(K, V)> const &fn);
 
   /**
    * Bucket class for each hash table bucket that the directory points to.
@@ -200,6 +203,10 @@ class ExtendibleHashTable : public HashTable<K, V> {
   auto GetGlobalDepthInternal() const -> int;
   auto GetLocalDepthInternal(int dir_index) const -> int;
   auto GetNumBucketsInternal() const -> int;
+  auto FindInternal(const K &key, V &value) -> bool;
+  void InsertInternal(const K &key, const V &value);
+  auto RemoveInternal(const K &key) -> bool;
+  void ForEachInternal(std::function<void(K, V)> const &fn);
 };
 
 }  // namespace bustub

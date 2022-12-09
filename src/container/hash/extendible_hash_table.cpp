@@ -67,28 +67,58 @@ auto ExtendibleHashTable<K, V>::GetNumBucketsInternal() const -> int {
 }
 
 template <typename K, typename V>
+void ExtendibleHashTable<K, V>::ForEach(std::function<void(K, V)> const &fn) {
+  std::scoped_lock<std::mutex> lock(latch_);
+  return ForEachInternal(fn);
+}
+
+template <typename K, typename V>
+void ExtendibleHashTable<K, V>::ForEachInternal(std::function<void(K, V)> const &fn) {
+  for (auto const &bucket : dir_) {
+    for (auto const &kv : bucket->GetItems()) {
+      fn(kv.first, kv.second);
+    }
+  }
+}
+
+template <typename K, typename V>
 auto ExtendibleHashTable<K, V>::Find(const K &key, V &value) -> bool {
-  return dir_[IndexOf(key)]->Find(key, value);
+  std::scoped_lock<std::mutex> lock(latch_);
+  return FindInternal(key, value);
 }
 
 template <typename K, typename V>
 auto ExtendibleHashTable<K, V>::Remove(const K &key) -> bool {
-  return dir_[IndexOf(key)]->Remove(key);
+  std::scoped_lock<std::mutex> lock(latch_);
+  return RemoveInternal(key);
 }
 
 template <typename K, typename V>
 void ExtendibleHashTable<K, V>::Insert(const K &key, const V &value) {
+  std::scoped_lock<std::mutex> lock(latch_);
+  return InsertInternal(key, value);
+}
+
+template <typename K, typename V>
+auto ExtendibleHashTable<K, V>::FindInternal(const K &key, V &value) -> bool {
+  return dir_[IndexOf(key)]->Find(key, value);
+}
+
+template <typename K, typename V>
+auto ExtendibleHashTable<K, V>::RemoveInternal(const K &key) -> bool {
+  return dir_[IndexOf(key)]->Remove(key);
+}
+
+template <typename K, typename V>
+void ExtendibleHashTable<K, V>::InsertInternal(const K &key, const V &value) {
   auto bucket = dir_[IndexOf(key)];
-
-  if (bucket->Insert(key, value))
-    return;
-
-  if (global_depth_ == bucket->GetDepth())
-    Extend();
-
-  Split(bucket);
-
-  return Insert(key, value);
+  while (!bucket->Insert(key, value)) {
+    if (global_depth_ == bucket->GetDepth()) {
+      Extend();
+    }
+    Split(bucket);
+    bucket = dir_[IndexOf(key)];
+  }
 }
 
 template <typename K, typename V>
