@@ -16,10 +16,10 @@
 namespace bustub {
 
 LRUKReplacer::LRUKReplacer(size_t num_frames, size_t k) : replacer_size_(num_frames), k_(k) {
-  LOG_INFO("New lru k replacer %ld %ld", num_frames, k);
-  cands_ = new cand_t[num_frames];
+  // LOG_INFO("New lru k replacer %ld %ld", num_frames, k);
+  cands_ = new Cand[num_frames];
   for (size_t i = 0; i < num_frames; i++) {
-    cands_[i] = cand_t{static_cast<frame_id_t>(i), k, false, std::list<size_t>{}};
+    cands_[i] = Cand{static_cast<frame_id_t>(i), k, false, std::list<size_t>{}};
   }
 }
 
@@ -28,25 +28,25 @@ LRUKReplacer::~LRUKReplacer() { delete[] cands_; }
 auto LRUKReplacer::Evict(frame_id_t *frame_id) -> bool {
   std::scoped_lock<std::mutex> lock(latch_);
   bool ok = EvictInternal(frame_id);
-  LOG_INFO("Evict %d %d curr %ld", ok, *frame_id, cache_.size());
+  // LOG_INFO("Evict %d %d curr %ld", ok, *frame_id, cache_.size());
   return ok;
 }
 
 void LRUKReplacer::RecordAccess(frame_id_t frame_id) {
   std::scoped_lock<std::mutex> lock(latch_);
-  LOG_INFO("Record Access %d", frame_id);
+  // LOG_INFO("Record Access %d", frame_id);
   return RecordAccessInternal(frame_id);
 }
 
 void LRUKReplacer::SetEvictable(frame_id_t frame_id, bool set_evictable) {
   std::scoped_lock<std::mutex> lock(latch_);
-  LOG_INFO("SetEvictable %d %d curr %ld", frame_id, set_evictable, cache_.size());
+  // LOG_INFO("SetEvictable %d %d curr %ld", frame_id, set_evictable, cache_.size());
   return SetEvictableInternal(frame_id, set_evictable);
 }
 
 void LRUKReplacer::Remove(frame_id_t frame_id) {
   std::scoped_lock<std::mutex> lock(latch_);
-  LOG_INFO("Remove %d curr %ld", frame_id, cache_.size());
+  // LOG_INFO("Remove %d curr %ld", frame_id, cache_.size());
   return RemoveInternal(frame_id);
 }
 
@@ -62,19 +62,19 @@ auto LRUKReplacer::EvictInternal(frame_id_t *frame_id) -> bool {
   auto it = cache_.begin();
   cand_t_ptr pcand = *it;
   cache_.erase(it);
-  *frame_id = pcand->frame_id;
-  pcand->clear_history();
+  *frame_id = pcand->frame_id_;
+  pcand->ClearHistory();
   return true;
 }
 
 void LRUKReplacer::RecordAccessInternal(frame_id_t frame_id) {
   BUSTUB_ASSERT(size_t(frame_id) < replacer_size_, "RecordAccess: invalid frame_id");
   cand_t_ptr pcand = &cands_[frame_id];
-  if (pcand->incache()) {
+  if (pcand->Incache()) {
     cache_.erase(pcand);
   }
-  pcand->add_history(current_timestamp_);
-  if (pcand->evictable) {
+  pcand->AddHistory(current_timestamp_);
+  if (pcand->evictable_) {
     cache_.insert(pcand);
   }
   current_timestamp_++;
@@ -83,27 +83,27 @@ void LRUKReplacer::RecordAccessInternal(frame_id_t frame_id) {
 void LRUKReplacer::SetEvictableInternal(frame_id_t frame_id, bool set_evictable) {
   BUSTUB_ASSERT(size_t(frame_id) < replacer_size_, "SetEvictable: invalid frame_id");
   cand_t_ptr pcand = &cands_[frame_id];
-  if (set_evictable == pcand->evictable) {
+  if (set_evictable == pcand->evictable_) {
     return;
   }
   if (set_evictable) {
-    if (pcand->inuse()) {
+    if (pcand->Inuse()) {
       cache_.insert(pcand);
     }
   } else {
-    if (pcand->incache()) {
+    if (pcand->Incache()) {
       cache_.erase(pcand);
     }
   }
-  pcand->evictable = set_evictable;
+  pcand->evictable_ = set_evictable;
 }
 
 void LRUKReplacer::RemoveInternal(frame_id_t frame_id) {
   cand_t_ptr pcand = &cands_[frame_id];
-  if (pcand->incache()) {
+  if (pcand->Incache()) {
     cache_.erase(pcand);
   }
-  pcand->clear_history();
+  pcand->ClearHistory();
 }
 
 auto LRUKReplacer::SizeInternal() -> size_t { return cache_.size(); }

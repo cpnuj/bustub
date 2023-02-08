@@ -145,46 +145,46 @@ class LRUKReplacer {
   [[maybe_unused]] size_t k_;
   std::mutex latch_;
 
-  struct cand_t {
-    frame_id_t frame_id;
-    size_t k;
-    bool evictable;
-    std::list<size_t> history;
+  struct Cand {
+    frame_id_t frame_id_;
+    size_t k_;
+    bool evictable_;
+    std::list<size_t> history_;
 
-    bool inline inuse() { return not history.empty(); }
-    bool inline incache() { return inuse() and evictable; }
-    size_t distance() { return (history.size() < k) ? 0 : history.front(); }
-    void clear_history() { return history.clear(); }
-    void add_history(size_t ts) {
-      history.emplace_back(ts);
-      if (history.size() > k) {
-        history.pop_front();
+    auto inline Inuse() -> bool { return !history_.empty(); }
+    auto inline Incache() -> bool { return Inuse() && evictable_; }
+    auto Distance() -> size_t { return (history_.size() < k_) ? 0 : history_.front(); }
+    void ClearHistory() { return history_.clear(); }
+    void AddHistory(size_t ts) {
+      history_.emplace_back(ts);
+      if (history_.size() > k_) {
+        history_.pop_front();
       }
     }
   };
 
-  using cand_t_ptr = cand_t *;
+  using cand_t_ptr = Cand *;
 
-  struct cmp_cand {
-    bool operator()(cand_t_ptr p1, cand_t_ptr p2) const {
-      BUSTUB_ASSERT(not p1->history.empty(), "p1 has empty history");
-      BUSTUB_ASSERT(not p2->history.empty(), "p2 has empty history");
-      size_t d1 = p1->distance();
-      size_t d2 = p2->distance();
-      return (d1 == d2) ? p1->history.front() < p2->history.front() : d1 < d2;
+  struct CmpCand {
+    auto operator()(cand_t_ptr p1, cand_t_ptr p2) const -> bool {
+      BUSTUB_ASSERT(!p1->history_.empty(), "p1 has empty history");
+      BUSTUB_ASSERT(!p2->history_.empty(), "p2 has empty history");
+      size_t d1 = p1->Distance();
+      size_t d2 = p2->Distance();
+      return (d1 == d2) ? p1->history_.front() < p2->history_.front() : d1 < d2;
     }
   };
 
-  static bool cmp_frame(cand_t_ptr p1, cand_t_ptr p2) {
-    BUSTUB_ASSERT(not p1->history.empty(), "p1 has empty history");
-    BUSTUB_ASSERT(not p2->history.empty(), "p2 has empty history");
-    size_t d1 = p1->distance();
-    size_t d2 = p2->distance();
-    return (d1 == d2) ? p1->history.front() < p2->history.front() : d1 < d2;
+  static auto CmpFrame(cand_t_ptr p1, cand_t_ptr p2) -> bool {
+    BUSTUB_ASSERT(!p1->history_.empty(), "p1 has empty history");
+    BUSTUB_ASSERT(!p2->history_.empty(), "p2 has empty history");
+    size_t d1 = p1->Distance();
+    size_t d2 = p2->Distance();
+    return (d1 == d2) ? p1->history_.front() < p2->history_.front() : d1 < d2;
   }
 
   cand_t_ptr cands_;
-  std::set<cand_t_ptr, cmp_cand> cache_;
+  std::set<cand_t_ptr, CmpCand> cache_;
 
   auto EvictInternal(frame_id_t *frame_id) -> bool;
   void RecordAccessInternal(frame_id_t frame_id);

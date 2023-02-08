@@ -6,12 +6,14 @@
 
 #include <algorithm>
 #include <cstdio>
+#include <iostream>
 #include <memory>
 #include <random>
 #include <set>
 #include <thread>  // NOLINT
 #include <vector>
 
+#include "common/bench.h"
 #include "gtest/gtest.h"
 
 namespace bustub {
@@ -98,13 +100,24 @@ TEST(LRUKReplacerTest, SampleTest) {
   ASSERT_EQ(0, lru_replacer.Size());
 }
 
-// TEST(LRUKReplacerTest, Bench) {
-//   LRUKReplacer lru_replacer(15000, 100);
-//   mytime t1, t2;
-//   for (int i = 0; i < 15000; i++) {
-//     lru_replacer.RecordAccess(i);
-//     lru_replacer.SetEvictable(i, 1);
-//   }
-// }
+TEST(LRUKReplacerTest, SampleBench) {
+  LRUKReplacer lru_replacer(15000, 100);
+  auto bench_record = [&]() {
+    for (int j = 0; j < 200; j++) {
+      for (int i = 0; i < 15000; i++) {
+        lru_replacer.RecordAccess(i);
+        lru_replacer.SetEvictable(i, 1);
+      }
+    }
+  };
+  auto bench_evict = [&]() {
+    frame_id_t f;
+    for (int i = 0; i < 15000; i++) {
+      lru_replacer.Evict(&f);
+    }
+  };
+  BENCHMARK(bench_record);
+  BENCHMARK(bench_evict);
+}
 
 }  // namespace bustub
