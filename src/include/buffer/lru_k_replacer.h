@@ -17,6 +17,8 @@
 #include <limits>
 #include <list>
 #include <mutex>  // NOLINT
+#include <queue>
+#include <set>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -54,7 +56,7 @@ class LRUKReplacer {
    *
    * @brief Destroys the LRUReplacer.
    */
-  ~LRUKReplacer() = default;
+  ~LRUKReplacer();
 
   /**
    * TODO(P1): Add implementation
@@ -137,34 +139,52 @@ class LRUKReplacer {
  private:
   // TODO(student): implement me! You can replace these member variables as you like.
   // Remove maybe_unused if you start using them.
-  [[maybe_unused]] size_t current_timestamp_{0};
+  size_t current_timestamp_{1};
   [[maybe_unused]] size_t curr_size_{0};
   [[maybe_unused]] size_t replacer_size_;
   [[maybe_unused]] size_t k_;
   std::mutex latch_;
 
-  using history_t = std::vector<std::size_t>;
-  std::vector<history_t> access_history_;
-  std::unordered_set<frame_id_t> candidates_;
+  struct cand_t {
+    frame_id_t frame_id;
+    size_t k;
+    bool evictable;
+    std::list<size_t> history;
 
-  auto Distance(frame_id_t f) const -> size_t {
-    history_t const &history = access_history_[f];
-    if (history.size() < k_) {
-      return std::numeric_limits<size_t>::max();
+    bool inline inuse() { return not history.empty(); }
+    bool inline incache() { return inuse() and evictable; }
+    size_t distance() { return (history.size() < k) ? 0 : history.front(); }
+    void clear_history() { return history.clear(); }
+    void add_history(size_t ts) {
+      history.emplace_back(ts);
+      if (history.size() > k) {
+        history.pop_front();
+      }
     }
-    return current_timestamp_ - history.back();
+  };
+
+  using cand_t_ptr = cand_t *;
+
+  struct cmp_cand {
+    bool operator()(cand_t_ptr p1, cand_t_ptr p2) const {
+      BUSTUB_ASSERT(not p1->history.empty(), "p1 has empty history");
+      BUSTUB_ASSERT(not p2->history.empty(), "p2 has empty history");
+      size_t d1 = p1->distance();
+      size_t d2 = p2->distance();
+      return (d1 == d2) ? p1->history.front() < p2->history.front() : d1 < d2;
+    }
+  };
+
+  static bool cmp_frame(cand_t_ptr p1, cand_t_ptr p2) {
+    BUSTUB_ASSERT(not p1->history.empty(), "p1 has empty history");
+    BUSTUB_ASSERT(not p2->history.empty(), "p2 has empty history");
+    size_t d1 = p1->distance();
+    size_t d2 = p2->distance();
+    return (d1 == d2) ? p1->history.front() < p2->history.front() : d1 < d2;
   }
 
-  auto EarliestAccess(frame_id_t f) const -> size_t { return access_history_[f].front(); }
-
-  auto CompareFrame(frame_id_t f1, frame_id_t f2) const -> bool {
-    size_t d1 = Distance(f1);
-    size_t d2 = Distance(f2);
-    if (d1 != d2) {
-      return d1 > d2;
-    }
-    return EarliestAccess(f1) < EarliestAccess(f2);
-  }
+  cand_t_ptr cands_;
+  std::set<cand_t_ptr, cmp_cand> cache_;
 
   auto EvictInternal(frame_id_t *frame_id) -> bool;
   void RecordAccessInternal(frame_id_t frame_id);
