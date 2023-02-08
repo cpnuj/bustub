@@ -12,14 +12,14 @@
 
 #pragma once
 
+#include <algorithm>
+#include <ctime>
 #include <limits>
 #include <list>
 #include <mutex>  // NOLINT
 #include <unordered_map>
-#include <vector>
-#include <ctime>
-#include <algorithm>
 #include <unordered_set>
+#include <vector>
 
 #include "common/config.h"
 #include "common/macros.h"
@@ -152,17 +152,25 @@ class LRUKReplacer {
     if (history.size() < k_) {
       return std::numeric_limits<size_t>::max();
     }
-    return history.back() - history.front();
+    return current_timestamp_ - history.back();
   }
 
-  auto LastAccess(frame_id_t f) const -> size_t { return access_history_[f].back(); }
+  auto EarliestAccess(frame_id_t f) const -> size_t { return access_history_[f].front(); }
 
   auto CompareFrame(frame_id_t f1, frame_id_t f2) const -> bool {
     size_t d1 = Distance(f1);
     size_t d2 = Distance(f2);
-    if (d1 != d2) { return d1 > d2; }
-    return LastAccess(f1) < LastAccess(f2);
+    if (d1 != d2) {
+      return d1 > d2;
+    }
+    return EarliestAccess(f1) < EarliestAccess(f2);
   }
+
+  auto EvictInternal(frame_id_t *frame_id) -> bool;
+  void RecordAccessInternal(frame_id_t frame_id);
+  void SetEvictableInternal(frame_id_t frame_id, bool set_evictable);
+  void RemoveInternal(frame_id_t frame_id);
+  auto SizeInternal() -> size_t;
 };
 
 }  // namespace bustub

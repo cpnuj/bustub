@@ -13,6 +13,7 @@
 #include <vector>
 
 #include "gtest/gtest.h"
+#include "bench/util.h"
 
 namespace bustub {
 
@@ -97,4 +98,14 @@ TEST(LRUKReplacerTest, SampleTest) {
   lru_replacer.Remove(1);
   ASSERT_EQ(0, lru_replacer.Size());
 }
+
+TEST(LRUKReplacerTest, Bench) {
+  LRUKReplacer lru_replacer(15000, 100);
+  mytime t1, t2;
+  for(int i = 0; i < 15000; i++) {
+    lru_replacer.RecordAccess(i);
+    lru_replacer.SetEvictable(i, 1);
+  }
+}
+
 }  // namespace bustub

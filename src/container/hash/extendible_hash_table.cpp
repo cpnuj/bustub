@@ -11,6 +11,7 @@
 //===----------------------------------------------------------------------===//
 
 #include <cassert>
+#include <cmath>
 #include <cstdlib>
 #include <functional>
 #include <list>
@@ -22,8 +23,7 @@
 namespace bustub {
 
 template <typename K, typename V>
-ExtendibleHashTable<K, V>::ExtendibleHashTable(size_t bucket_size)
-    : global_depth_(0), bucket_size_(bucket_size), num_buckets_(1) {
+ExtendibleHashTable<K, V>::ExtendibleHashTable(size_t bucket_size) : bucket_size_(bucket_size) {
   dir_.emplace_back(std::make_shared<Bucket>(bucket_size_, global_depth_));
 }
 
@@ -139,8 +139,9 @@ template <typename K, typename V>
 auto ExtendibleHashTable<K, V>::Split(std::shared_ptr<Bucket> bucket) -> void {
   bucket->IncrementDepth();
   std::shared_ptr<Bucket> new_bucket = std::make_shared<Bucket>(bucket_size_, bucket->GetDepth());
+  num_buckets_++;
 
-  for (int i = 0; i < num_buckets_; ++i) {
+  for (uint64_t i = 0; i < dir_.size(); ++i) {
     if (dir_[i] == bucket && (i & (1 << (bucket->GetDepth() - 1)))) {
       dir_[i] = new_bucket;
     }
@@ -152,11 +153,11 @@ auto ExtendibleHashTable<K, V>::Split(std::shared_ptr<Bucket> bucket) -> void {
 template <typename K, typename V>
 auto ExtendibleHashTable<K, V>::Extend() -> void {
   global_depth_++;
-  num_buckets_ *= 2;
 
-  dir_.resize(num_buckets_);
+  dir_.resize(std::pow(2, global_depth_));
   size_t old_mask = (1 << (global_depth_ - 1)) - 1;
-  for (int i = num_buckets_ / 2; i < num_buckets_; i++) {
+
+  for (auto i = dir_.size() / 2; i < dir_.size(); i++) {
     dir_[i] = dir_[i & old_mask];
   }
 }
@@ -191,8 +192,9 @@ auto ExtendibleHashTable<K, V>::Bucket::Remove(const K &key) -> bool {
 
 template <typename K, typename V>
 auto ExtendibleHashTable<K, V>::Bucket::Insert(const K &key, const V &value) -> bool {
-  if (list_.size() >= size_)
+  if (list_.size() >= size_) {
     return false;
+  }
 
   for (auto it = list_.begin(); it != list_.end(); it++) {
     if (it->first == key) {

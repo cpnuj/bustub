@@ -17,12 +17,12 @@
 
 #pragma once
 
+#include <functional>
 #include <list>
 #include <memory>
 #include <mutex>  // NOLINT
 #include <utility>
 #include <vector>
-#include <functional>
 
 #include "container/hash/hash_table.h"
 
@@ -171,9 +171,9 @@ class ExtendibleHashTable : public HashTable<K, V> {
   // TODO(student): You may add additional private members and helper functions and remove the ones
   // you don't need.
 
-  int global_depth_;    // The global depth of the directory
-  size_t bucket_size_;  // The size of a bucket
-  int num_buckets_;     // The number of buckets in the hash table
+  int global_depth_{0};  // The global depth of the directory
+  size_t bucket_size_;   // The size of a bucket
+  int num_buckets_{1};   // The number of buckets in the hash table
   mutable std::mutex latch_;
   std::vector<std::shared_ptr<Bucket>> dir_;  // The directory of the hash table
 

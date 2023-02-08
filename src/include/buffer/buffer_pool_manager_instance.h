@@ -180,7 +180,6 @@ class BufferPoolManagerInstance : public BufferPoolManager {
 
  private:
   void ResetPageMeta(Page *page, page_id_t page_id);
-  auto GetFreeFrameInternal(frame_id_t *frame_id) -> bool;
   auto GetFreeFrame(frame_id_t *frame_id) -> bool;
 };
 }  // namespace bustub
