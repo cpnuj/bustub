@@ -50,6 +50,10 @@ class BPlusTreeLeafPage : public BPlusTreePage {
   void SetNextPageId(page_id_t next_page_id);
   auto KeyAt(int index) const -> KeyType;
 
+  // My new methods
+  auto ValueAt(int index) const -> ValueType;
+  void SetValue(int index, KeyType const &key, ValueType const &val);
+
  private:
   page_id_t next_page_id_;
   // Flexible array member for page data.

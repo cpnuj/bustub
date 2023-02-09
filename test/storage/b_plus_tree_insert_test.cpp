@@ -216,6 +216,15 @@ TEST(BPlusTreeTests, Play) {
   index_key.SetFromInteger(key);
   tree.Insert(index_key, rid, transaction);
 
+  std::vector<RID> rids;
+  rids.clear();
+  index_key.SetFromInteger(key);
+  tree.GetValue(index_key, &rids);
+  EXPECT_EQ(rids.size(), 1);
+
+  // value = key & 0xFFFFFFFF;
+  EXPECT_EQ(rids[0].GetSlotNum(), value);
+
   delete transaction;
   delete disk_manager;
   delete bpm;

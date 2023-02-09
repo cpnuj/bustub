@@ -21,7 +21,7 @@ BPLUSTREE_TYPE::BPlusTree(std::string name, BufferPoolManager *buffer_pool_manag
  * Helper function to decide whether current b+tree is empty
  */
 INDEX_TEMPLATE_ARGUMENTS
-auto BPLUSTREE_TYPE::IsEmpty() const -> bool { return true; }
+auto BPLUSTREE_TYPE::IsEmpty() const -> bool { return root_page_id_ == INVALID_PAGE_ID; }
 /*****************************************************************************
  * SEARCH
  *****************************************************************************/
@@ -32,7 +32,23 @@ auto BPLUSTREE_TYPE::IsEmpty() const -> bool { return true; }
  */
 INDEX_TEMPLATE_ARGUMENTS
 auto BPLUSTREE_TYPE::GetValue(const KeyType &key, std::vector<ValueType> *result, Transaction *transaction) -> bool {
-  return false;
+  bool res;
+
+  LeafPage *leaf;
+  int index;
+  Search(key, &leaf, &index);
+
+  if (index == -1 || comparator_(key, leaf->KeyAt(index))) {
+    res = false;
+    goto ret;
+  }
+
+  res = true;
+  result->emplace_back(leaf->ValueAt(index));
+
+ret:
+  buffer_pool_manager_->UnpinPage(leaf->GetPageId(), false);
+  return res;
 }
 
 /*****************************************************************************
@@ -47,6 +63,16 @@ auto BPLUSTREE_TYPE::GetValue(const KeyType &key, std::vector<ValueType> *result
  */
 INDEX_TEMPLATE_ARGUMENTS
 auto BPLUSTREE_TYPE::Insert(const KeyType &key, const ValueType &value, Transaction *transaction) -> bool {
+  if (root_page_id_ == INVALID_PAGE_ID) {
+    page_id_t pid;
+    LeafPage *leaf = reinterpret_cast<LeafPage *>(buffer_pool_manager_->NewPage(&pid));
+    leaf->Init(pid, INVALID_PAGE_ID);
+    root_page_id_ = pid;
+    leaf->SetValue(0, key, value);
+    leaf->IncreaseSize(1);
+    ToString(leaf, buffer_pool_manager_);
+    return true;
+  }
   return false;
 }
 
@@ -306,6 +332,60 @@ void BPLUSTREE_TYPE::ToString(BPlusTreePage *page, BufferPoolManager *bpm) const
     }
   }
   bpm->UnpinPage(page->GetPageId(), false);
+}
+
+/**
+ * Search the predecessor for the given key.
+ * @tparam KeyType
+ * @tparam ValueType
+ * @tparam KeyComparator
+ * @param key
+ * @param leaf
+ * @param index
+ */
+INDEX_TEMPLATE_ARGUMENTS
+void BPLUSTREE_TYPE::Search(const KeyType &key, LeafPage **leaf, int *index) {
+  page_id_t target = root_page_id_;
+  BPlusTreePage *page;
+  for (;;) {
+    page = reinterpret_cast<BPlusTreePage *>(buffer_pool_manager_->FetchPage(target));
+    if (page->IsLeafPage()) {
+      break;
+    }
+    // search an internal page
+    InternalPage *inter = static_cast<InternalPage *>(page);
+    page_id_t next = SearchInternal(inter, key);
+    buffer_pool_manager_->UnpinPage(target, false);
+    target = next;
+  }
+  // reach a leaf page
+  *leaf = static_cast<LeafPage *>(page);
+  SearchLeaf(*leaf, key, index);
+}
+
+INDEX_TEMPLATE_ARGUMENTS
+auto BPLUSTREE_TYPE::SearchInternal(InternalPage *page, const KeyType &key) -> page_id_t {
+  // We should start at index 1 since the first key at internal page
+  // is invalid. See comments at b_plus_tree_internal_page.h.
+  for (int i = 1; i < page->GetSize(); i++) {
+    if (comparator_(key, page->KeyAt(i))) {
+      return page->ValueAt(i - 1);
+    }
+  }
+  return page->ValueAt(page->GetSize() - 1);
+}
+
+INDEX_TEMPLATE_ARGUMENTS
+void BPLUSTREE_TYPE::SearchLeaf(LeafPage *page, const KeyType &key, int *index) {
+  for (int i = 0; i < page->GetSize(); i++) {
+    if (comparator_(page->KeyAt(i), key)) {
+      continue;
+    }
+    *index = i;
+    return;
+  }
+  // not found
+  *index = -1;
 }
 
 template class BPlusTree<GenericKey<4>, RID, GenericComparator<4>>;
