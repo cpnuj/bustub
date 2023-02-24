@@ -84,7 +84,35 @@ end:
  */
 INDEX_TEMPLATE_ARGUMENTS
 auto BPLUSTREE_TYPE::Insert(const KeyType &key, const ValueType &value, Transaction *transaction) -> bool {
-  return false;
+  bool for_write = true;
+  bool lock_root = true;
+  PStack stack = PStackNew(for_write, lock_root);
+
+  EnsureRootPageExist();
+
+  auto safe_for_insert = [](BPlusTreePage *page) { return false; };
+
+  Search(stack, key, safe_for_insert);
+  PStackNode node = PStackTop(stack);
+
+  bool ok = false;
+  KeyType found_key;
+
+  if (node.route_idx_ < node.page_->GetSize()) {
+    found_key = PageGetKey(node.page_, node.route_idx_);
+    if (comparator_(key, found_key) == 0) {
+      goto end;
+    }
+  }
+
+  ok = true;
+
+  // do insert
+  Run(stack, Op(OP_INSERT, node.route_idx_, key, value));
+
+end:
+  PStackRelease(stack);
+  return ok;
 }
 
 /*****************************************************************************
@@ -346,14 +374,58 @@ void BPLUSTREE_TYPE::ToString(BPlusTreePage *page, BufferPoolManager *bpm) const
 }
 
 INDEX_TEMPLATE_ARGUMENTS
+void BPLUSTREE_TYPE::RLatchPage(BPlusTreePage *page) {
+  if (page == ROOT_PAGE_ID_LOCK) {
+    LOG_DEBUG("rlatch 0");
+    root_page_id_latch_.RLock();
+  } else {
+    LOG_DEBUG("rlatch %d", page->GetPageId());
+    to_page_ptr(page)->RLatch();
+  }
+}
+
+INDEX_TEMPLATE_ARGUMENTS
+void BPLUSTREE_TYPE::RUnlatchPage(BPlusTreePage *page) {
+  if (page == ROOT_PAGE_ID_LOCK) {
+    LOG_DEBUG("runlatch 0");
+    root_page_id_latch_.RUnlock();
+  } else {
+    LOG_DEBUG("runlatch %d", page->GetPageId());
+    to_page_ptr(page)->RUnlatch();
+  }
+}
+
+INDEX_TEMPLATE_ARGUMENTS
+void BPLUSTREE_TYPE::WLatchPage(BPlusTreePage *page) {
+  if (page == ROOT_PAGE_ID_LOCK) {
+    LOG_DEBUG("wlatch 0");
+    root_page_id_latch_.WLock();
+  } else {
+    LOG_DEBUG("wlatch %d", page->GetPageId());
+    to_page_ptr(page)->WLatch();
+  }
+}
+
+INDEX_TEMPLATE_ARGUMENTS
+void BPLUSTREE_TYPE::WUnlatchPage(BPlusTreePage *page) {
+  if (page == ROOT_PAGE_ID_LOCK) {
+    LOG_DEBUG("wunlatch 0");
+    root_page_id_latch_.WUnlock();
+  } else {
+    LOG_DEBUG("wunlatch %d", page->GetPageId());
+    to_page_ptr(page)->WUnlatch();
+  }
+}
+
+INDEX_TEMPLATE_ARGUMENTS
 auto BPLUSTREE_TYPE::PStackNew(bool for_write, bool lock_root) -> PStack {
   PStack stack;
   stack.for_write = for_write;
   if (lock_root) {
     if (for_write) {
-      root_page_id_latch_.WLock();
+      WLatchPage(ROOT_PAGE_ID_LOCK);
     } else {
-      root_page_id_latch_.RLock();
+      RLatchPage(ROOT_PAGE_ID_LOCK);
     }
     // use a PStackNode with nullptr indicating
     // root_page_id was locked
@@ -385,9 +457,9 @@ INDEX_TEMPLATE_ARGUMENTS
 auto BPLUSTREE_TYPE::PStackPushUnlockedPage(PStack &stack, PStackNode node) -> int {
   stack.nodes_.emplace_back(node);
   if (stack.for_write) {
-    to_page_ptr(node.page_)->WLatch();
+    WLatchPage(node.page_);
   } else {
-    to_page_ptr(node.page_)->RLatch();
+    RLatchPage(node.page_);
   }
   return PStackPointer(stack);
 }
@@ -550,16 +622,16 @@ void BPLUSTREE_TYPE::Search(PStack &stack, const KeyType &key, unlock_cond_fn &&
   for (;;) {
     // fetch page and lock it
     raw_page = buffer_pool_manager_->FetchPage(next);
-    BUSTUB_ASSERT(raw_page != nullptr, "fail to fetch page");
+    page = to_tree_ptr(raw_page);
+    BUSTUB_ASSERT(page != nullptr, "fail to fetch page");
     if (stack.for_write) {
-      raw_page->WLatch();
+      WLatchPage(page);
     } else {
-      raw_page->RLatch();
+      RLatchPage(page);
     }
 
     // check if it's safe to release previous latches,
     // then add the page to stack
-    page = to_tree_ptr(raw_page);
     if (safe_for_release(page)) {
       PStackRelease(stack);
     }
@@ -573,6 +645,31 @@ void BPLUSTREE_TYPE::Search(PStack &stack, const KeyType &key, unlock_cond_fn &&
     }
 
     next = std::get<page_id_t>(PageGetValue(page, route_idx));
+  }
+}
+
+INDEX_TEMPLATE_ARGUMENTS
+auto BPLUSTREE_TYPE::DoOperation(PStack &stack, const Op &op) -> Op {
+  OpCode nextop;
+  switch (op.opcode_) {
+    case OP_FINISH:
+      break;
+    case OP_INSERT:
+      break;
+    case OP_REMOVE:
+      break;
+    case OP_REPLACE:
+      break;
+    default:
+      BUSTUB_ASSERT(false, "invalid opcode");
+  }
+  return nextop;
+}
+
+INDEX_TEMPLATE_ARGUMENTS
+void BPLUSTREE_TYPE::Run(PStack &stack, Op op) {
+  while (op.opcode_ != OP_FINISH) {
+    op = DoOperation(stack, op);
   }
 }
 

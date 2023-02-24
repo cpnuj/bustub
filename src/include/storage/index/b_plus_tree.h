@@ -91,6 +91,13 @@ class BPlusTree {
 #define to_leaf_ptr(page) static_cast<LeafPage *>(page)
 #define to_inte_ptr(page) static_cast<InternalPage *>(page)
 
+// Some latch wrappers
+#define ROOT_PAGE_ID_LOCK nullptr
+  void RLatchPage(BPlusTreePage *page);
+  void RUnlatchPage(BPlusTreePage *page);
+  void WLatchPage(BPlusTreePage *page);
+  void WUnlatchPage(BPlusTreePage *page);
+
 // Macros define PStackNode attributes
 #define PStackNode_DIRTY (1 << 0)
 #define PStackNode_TODEL (1 << 1)
@@ -135,6 +142,20 @@ class BPlusTree {
   auto BinarySearch(BPlusTreePage *page, const KeyType &key, int begin, int end) -> int;
   auto SearchPage(BPlusTreePage *page, const KeyType &key) -> int;
   void Search(PStack &stack, const KeyType &key, unlock_cond_fn &&safe_for_release);
+
+  enum OpCode { OP_FINISH, OP_INSERT, OP_REMOVE, OP_REPLACE };
+  struct Op {
+    OpCode opcode_;
+    int index_;
+    KeyType key_;
+    ValueUnion val_;
+
+    Op(OpCode opcode = OP_FINISH, int index = -1, KeyType key = KeyType{}, ValueUnion val = ValueType{})
+        : opcode_(opcode), index_(index), key_(key), val_(val) {}
+  };
+
+  auto DoOperation(PStack &stack, const Op &op) -> Op;
+  void Run(PStack &stack, Op op);
 
   // member variable
   std::string index_name_;
