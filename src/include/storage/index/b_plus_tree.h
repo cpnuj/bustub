@@ -12,6 +12,7 @@
 
 #include <queue>
 #include <string>
+#include <variant>
 #include <vector>
 
 #include "concurrency/transaction.h"
@@ -82,8 +83,15 @@ class BPlusTree {
 
   void ToString(BPlusTreePage *page, BufferPoolManager *bpm) const;
 
+// Macros for reinterpret_cast between Page and BPlusTreePage
 #define to_page_ptr(page) reinterpret_cast<Page *>(page)
+#define to_tree_ptr(page) reinterpret_cast<BPlusTreePage *>(page)
 
+// Macros for static_cast BPlusTreePage to LeafPage and InternalPage
+#define to_leaf_ptr(page) static_cast<LeafPage *>(page)
+#define to_inte_ptr(page) static_cast<InternalPage *>(page)
+
+// Macros define PStackNode attributes
 #define PStackNode_DIRTY (1 << 0)
 #define PStackNode_TODEL (1 << 1)
 
@@ -91,7 +99,7 @@ class BPlusTree {
     BPlusTreePage *page_;
     int route_idx_;
     int attribute_;
-    explicit PStackNode(BPlusTreePage *page, int route_idx = -1, int attribute = 0)
+    explicit PStackNode(BPlusTreePage *page = nullptr, int route_idx = -1, int attribute = 0)
         : page_(page), route_idx_(route_idx), attribute_(attribute) {}
   };
 
@@ -105,19 +113,28 @@ class BPlusTree {
   auto PStackPointer(PStack &stack) -> int;
   void PStackSetRouteIdx(PStack &stack, int index, int route_idx);
   void PStackSetAttribute(PStack &stack, int index, int attri);
-  auto PStackPush(PStack &stack, PStackNode node) -> int;
+  auto PStackPushLockedPage(PStack &stack, PStackNode node) -> int;
+  auto PStackPushUnlockedPage(PStack &stack, PStackNode node) -> int;
   void PStackPop(PStack &stack);
+  auto PStackTop(PStack &stack) -> PStackNode;
+  auto PStackEmpty(PStack &stack) -> bool;
   void PStackRelease(PStack &stack);
 
+  using ValueUnion = std::variant<page_id_t, ValueType>;
+  auto PageNewLeaf(page_id_t parent_page_id) -> LeafPage *;
+  auto PageNewInternal(page_id_t parent_page_id) -> InternalPage *;
   auto PageGetKey(BPlusTreePage *page, int index) -> KeyType;
+  auto PageGetValue(BPlusTreePage *page, int index) -> ValueUnion;
+  void PageSetKeyValue(BPlusTreePage *page, int index, const KeyType &key, const ValueUnion &val);
 
+  void SetRootPage(BPlusTreePage *page);
+  auto RootPageExist() -> bool;
+  void EnsureRootPageExist();
+
+  using unlock_cond_fn = std::function<bool(BPlusTreePage *)>;
   auto BinarySearch(BPlusTreePage *page, const KeyType &key, int begin, int end) -> int;
-
   auto SearchPage(BPlusTreePage *page, const KeyType &key) -> int;
-
-  void Search(const KeyType &key, LeafPage **leaf, int *index);
-  auto SearchInternal(InternalPage *page, const KeyType &key) -> page_id_t;
-  void SearchLeaf(LeafPage *page, const KeyType &key, int *index);
+  void Search(PStack &stack, const KeyType &key, unlock_cond_fn &&safe_for_release);
 
   // member variable
   std::string index_name_;

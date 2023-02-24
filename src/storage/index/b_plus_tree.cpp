@@ -32,23 +32,44 @@ auto BPLUSTREE_TYPE::IsEmpty() const -> bool { return root_page_id_ == INVALID_P
  */
 INDEX_TEMPLATE_ARGUMENTS
 auto BPLUSTREE_TYPE::GetValue(const KeyType &key, std::vector<ValueType> *result, Transaction *transaction) -> bool {
-  bool res;
+  bool for_write = false;
+  bool lock_root = true;
+  auto stack = PStackNew(for_write, lock_root);
 
-  LeafPage *leaf;
-  int index;
-  Search(key, &leaf, &index);
+  // For reading a value, once we got rlatch for current page,
+  // we can immediately release all previous rlatch, so the lock
+  // policy can just return true;
+  auto safe_for_release = [](BPlusTreePage *page) { return true; };
 
-  if (index == -1 || comparator_(key, leaf->KeyAt(index))) {
-    res = false;
-    goto ret;
+  bool ok = false;
+  PStackNode leaf_node;
+  KeyType found_key;
+  ValueType found_val;
+
+  if (!RootPageExist()) {
+    goto end;
   }
 
-  res = true;
-  result->emplace_back(leaf->ValueAt(index));
+  // Now the stack should only contain a leaf node
+  Search(stack, key, std::move(safe_for_release));
+  leaf_node = PStackTop(stack);
 
-ret:
-  buffer_pool_manager_->UnpinPage(leaf->GetPageId(), false);
-  return res;
+  if (leaf_node.route_idx_ >= leaf_node.page_->GetSize()) {
+    goto end;
+  }
+
+  found_key = PageGetKey(leaf_node.page_, leaf_node.route_idx_);
+  if (comparator_(key, found_key) != 0) {
+    goto end;
+  }
+
+  ok = true;
+  found_val = std::get<ValueType>(PageGetValue(leaf_node.page_, leaf_node.route_idx_));
+  result->emplace_back(found_val);
+
+end:
+  PStackRelease(stack);
+  return ok;
 }
 
 /*****************************************************************************
@@ -63,16 +84,6 @@ ret:
  */
 INDEX_TEMPLATE_ARGUMENTS
 auto BPLUSTREE_TYPE::Insert(const KeyType &key, const ValueType &value, Transaction *transaction) -> bool {
-  if (root_page_id_ == INVALID_PAGE_ID) {
-    page_id_t pid;
-    LeafPage *leaf = reinterpret_cast<LeafPage *>(buffer_pool_manager_->NewPage(&pid));
-    leaf->Init(pid, INVALID_PAGE_ID);
-    root_page_id_ = pid;
-    leaf->SetValue(0, key, value);
-    leaf->IncreaseSize(1);
-    ToString(leaf, buffer_pool_manager_);
-    return true;
-  }
   return false;
 }
 
@@ -365,7 +376,13 @@ void BPLUSTREE_TYPE::PStackSetAttribute(PStack &stack, int index, int attri) {
 }
 
 INDEX_TEMPLATE_ARGUMENTS
-auto BPLUSTREE_TYPE::PStackPush(PStack &stack, PStackNode node) -> int {
+auto BPLUSTREE_TYPE::PStackPushLockedPage(PStack &stack, PStackNode node) -> int {
+  stack.nodes_.emplace_back(node);
+  return PStackPointer(stack);
+}
+
+INDEX_TEMPLATE_ARGUMENTS
+auto BPLUSTREE_TYPE::PStackPushUnlockedPage(PStack &stack, PStackNode node) -> int {
   stack.nodes_.emplace_back(node);
   if (stack.for_write) {
     to_page_ptr(node.page_)->WLatch();
@@ -410,10 +427,34 @@ void BPLUSTREE_TYPE::PStackPop(PStack &stack) {
 }
 
 INDEX_TEMPLATE_ARGUMENTS
+auto BPLUSTREE_TYPE::PStackTop(PStack &stack) -> PStackNode { return stack.nodes_.back(); }
+
+INDEX_TEMPLATE_ARGUMENTS
+auto BPLUSTREE_TYPE::PStackEmpty(PStack &stack) -> bool { return stack.nodes_.empty(); }
+
+INDEX_TEMPLATE_ARGUMENTS
 void BPLUSTREE_TYPE::PStackRelease(PStack &stack) {
   while (!stack.nodes_.empty()) {
     PStackPop(stack);
   }
+}
+
+INDEX_TEMPLATE_ARGUMENTS
+auto BPLUSTREE_TYPE::PageNewLeaf(page_id_t parent_page_id) -> LeafPage * {
+  page_id_t page_id;
+  BPlusTreePage *page = to_tree_ptr(buffer_pool_manager_->NewPage(&page_id));
+  LeafPage *leaf = to_leaf_ptr(page);
+  leaf->Init(page_id, parent_page_id, leaf_max_size_);
+  return leaf;
+}
+
+INDEX_TEMPLATE_ARGUMENTS
+auto BPLUSTREE_TYPE::PageNewInternal(page_id_t parent_page_id) -> InternalPage * {
+  page_id_t page_id;
+  BPlusTreePage *page = to_tree_ptr(buffer_pool_manager_->NewPage(&page_id));
+  InternalPage *inte = to_inte_ptr(page);
+  inte->Init(page_id, parent_page_id, internal_max_size_);
+  return inte;
 }
 
 INDEX_TEMPLATE_ARGUMENTS
@@ -423,6 +464,43 @@ auto BPLUSTREE_TYPE::PageGetKey(BPlusTreePage *page, int index) -> KeyType {
   } else {
     return static_cast<InternalPage *>(page)->KeyAt(index);
   }
+}
+
+INDEX_TEMPLATE_ARGUMENTS
+auto BPLUSTREE_TYPE::PageGetValue(BPlusTreePage *page, int index) -> ValueUnion {
+  if (page->IsLeafPage()) {
+    return to_leaf_ptr(page)->ValueAt(index);
+  } else {
+    return to_inte_ptr(page)->ValueAt(index);
+  }
+}
+
+INDEX_TEMPLATE_ARGUMENTS
+void BPLUSTREE_TYPE::PageSetKeyValue(BPlusTreePage *page, int index, const KeyType &key, const ValueUnion &val) {
+  if (page->IsLeafPage()) {
+    return to_leaf_ptr(page)->SetKeyValue(index, key, std::get<ValueType>(val));
+  } else {
+    return to_inte_ptr(page)->SetKeyValue(index, key, std::get<page_id_t>(val));
+  }
+}
+
+INDEX_TEMPLATE_ARGUMENTS
+void BPLUSTREE_TYPE::SetRootPage(BPlusTreePage *page) {
+  root_page_id_ = page->GetPageId();
+  UpdateRootPageId();
+}
+
+INDEX_TEMPLATE_ARGUMENTS
+auto BPLUSTREE_TYPE::RootPageExist() -> bool { return root_page_id_ != INVALID_PAGE_ID; }
+
+INDEX_TEMPLATE_ARGUMENTS
+void BPLUSTREE_TYPE::EnsureRootPageExist() {
+  if (RootPageExist()) {
+    return;
+  }
+  LeafPage *page = PageNewLeaf(INVALID_PAGE_ID);
+  SetRootPage(page);
+  buffer_pool_manager_->UnpinPage(page->GetPageId(), true);
 }
 
 INDEX_TEMPLATE_ARGUMENTS
@@ -461,48 +539,41 @@ auto BPLUSTREE_TYPE::SearchPage(BPlusTreePage *page, const KeyType &key) -> int 
 }
 
 INDEX_TEMPLATE_ARGUMENTS
-void BPLUSTREE_TYPE::Search(const KeyType &key, LeafPage **leaf, int *index) {
-  page_id_t target = root_page_id_;
+void BPLUSTREE_TYPE::Search(PStack &stack, const KeyType &key, unlock_cond_fn &&safe_for_release) {
+  BUSTUB_ASSERT(RootPageExist(), "search with invalid btree");
+
+  Page *raw_page;
   BPlusTreePage *page;
+  page_id_t next;
+
+  next = root_page_id_;
   for (;;) {
-    page = reinterpret_cast<BPlusTreePage *>(buffer_pool_manager_->FetchPage(target));
+    // fetch page and lock it
+    raw_page = buffer_pool_manager_->FetchPage(next);
+    BUSTUB_ASSERT(raw_page != nullptr, "fail to fetch page");
+    if (stack.for_write) {
+      raw_page->WLatch();
+    } else {
+      raw_page->RLatch();
+    }
+
+    // check if it's safe to release previous latches,
+    // then add the page to stack
+    page = to_tree_ptr(raw_page);
+    if (safe_for_release(page)) {
+      PStackRelease(stack);
+    }
+    int sp = PStackPushLockedPage(stack, PStackNode(page));
+
+    int route_idx = SearchPage(page, key);
+    PStackSetRouteIdx(stack, sp, route_idx);
+
     if (page->IsLeafPage()) {
       break;
     }
-    // search an internal page
-    InternalPage *inter = static_cast<InternalPage *>(page);
-    page_id_t next = SearchInternal(inter, key);
-    buffer_pool_manager_->UnpinPage(target, false);
-    target = next;
-  }
-  // reach a leaf page
-  *leaf = static_cast<LeafPage *>(page);
-  SearchLeaf(*leaf, key, index);
-}
 
-INDEX_TEMPLATE_ARGUMENTS
-auto BPLUSTREE_TYPE::SearchInternal(InternalPage *page, const KeyType &key) -> page_id_t {
-  // We should start at index 1 since the first key at internal page
-  // is invalid. See comments at b_plus_tree_internal_page.h.
-  for (int i = 1; i < page->GetSize(); i++) {
-    if (comparator_(key, page->KeyAt(i))) {
-      return page->ValueAt(i - 1);
-    }
+    next = std::get<page_id_t>(PageGetValue(page, route_idx));
   }
-  return page->ValueAt(page->GetSize() - 1);
-}
-
-INDEX_TEMPLATE_ARGUMENTS
-void BPLUSTREE_TYPE::SearchLeaf(LeafPage *page, const KeyType &key, int *index) {
-  for (int i = 0; i < page->GetSize(); i++) {
-    if (comparator_(page->KeyAt(i), key)) {
-      continue;
-    }
-    *index = i;
-    return;
-  }
-  // not found
-  *index = -1;
 }
 
 template class BPlusTree<GenericKey<4>, RID, GenericComparator<4>>;

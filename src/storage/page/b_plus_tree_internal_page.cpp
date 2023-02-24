@@ -43,11 +43,6 @@ auto B_PLUS_TREE_INTERNAL_PAGE_TYPE::KeyAt(int index) const -> KeyType {
   return std::get<0>(array_[index]);
 }
 
-INDEX_TEMPLATE_ARGUMENTS
-void B_PLUS_TREE_INTERNAL_PAGE_TYPE::SetKeyAt(int index, const KeyType &key) {
-  BUSTUB_ASSERT(index < GetMaxSize(), "Invalid index");
-}
-
 /*
  * Helper method to get the value associated with input "index"(a.k.a array
  * offset)
@@ -56,6 +51,12 @@ INDEX_TEMPLATE_ARGUMENTS
 auto B_PLUS_TREE_INTERNAL_PAGE_TYPE::ValueAt(int index) const -> ValueType {
   BUSTUB_ASSERT(index < GetSize(), "Invalid index");
   return std::get<1>(array_[index]);
+}
+
+INDEX_TEMPLATE_ARGUMENTS
+void B_PLUS_TREE_INTERNAL_PAGE_TYPE::SetKeyValue(int index, const KeyType &key, const ValueType &val) {
+  BUSTUB_ASSERT(index < GetMaxSize(), "Invalid index");
+  array_[index] = std::pair(key, val);
 }
 
 // valuetype for internalNode should be page id_t
