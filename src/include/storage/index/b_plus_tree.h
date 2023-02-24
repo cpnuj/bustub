@@ -82,13 +82,49 @@ class BPlusTree {
 
   void ToString(BPlusTreePage *page, BufferPoolManager *bpm) const;
 
+#define to_page_ptr(page) reinterpret_cast<Page *>(page)
+
+#define PStackNode_DIRTY (1 << 0)
+#define PStackNode_TODEL (1 << 1)
+
+  struct PStackNode {
+    BPlusTreePage *page_;
+    int route_idx_;
+    int attribute_;
+    explicit PStackNode(BPlusTreePage *page, int route_idx = -1, int attribute = 0)
+        : page_(page), route_idx_(route_idx), attribute_(attribute) {}
+  };
+
+  struct PStack {
+    std::vector<PStackNode> nodes_;
+    bool for_write;  // for_write is true while this stack handling wlatch,
+                     // false while handling rlatch.
+  };
+
+  auto PStackNew(bool for_write, bool lock_root) -> PStack;
+  auto PStackPointer(PStack &stack) -> int;
+  void PStackSetRouteIdx(PStack &stack, int index, int route_idx);
+  void PStackSetAttribute(PStack &stack, int index, int attri);
+  auto PStackPush(PStack &stack, PStackNode node) -> int;
+  void PStackPop(PStack &stack);
+  void PStackRelease(PStack &stack);
+
+  auto PageGetKey(BPlusTreePage *page, int index) -> KeyType;
+
+  auto BinarySearch(BPlusTreePage *page, const KeyType &key, int begin, int end) -> int;
+
+  auto SearchPage(BPlusTreePage *page, const KeyType &key) -> int;
+
   void Search(const KeyType &key, LeafPage **leaf, int *index);
   auto SearchInternal(InternalPage *page, const KeyType &key) -> page_id_t;
   void SearchLeaf(LeafPage *page, const KeyType &key, int *index);
 
   // member variable
   std::string index_name_;
+
   page_id_t root_page_id_;
+  ReaderWriterLatch root_page_id_latch_;
+
   BufferPoolManager *buffer_pool_manager_;
   KeyComparator comparator_;
   int leaf_max_size_;

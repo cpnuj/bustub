@@ -334,15 +334,132 @@ void BPLUSTREE_TYPE::ToString(BPlusTreePage *page, BufferPoolManager *bpm) const
   bpm->UnpinPage(page->GetPageId(), false);
 }
 
-/**
- * Search the predecessor for the given key.
- * @tparam KeyType
- * @tparam ValueType
- * @tparam KeyComparator
- * @param key
- * @param leaf
- * @param index
- */
+INDEX_TEMPLATE_ARGUMENTS
+auto BPLUSTREE_TYPE::PStackNew(bool for_write, bool lock_root) -> PStack {
+  PStack stack;
+  stack.for_write = for_write;
+  if (lock_root) {
+    if (for_write) {
+      root_page_id_latch_.WLock();
+    } else {
+      root_page_id_latch_.RLock();
+    }
+    // use a PStackNode with nullptr indicating
+    // root_page_id was locked
+    stack.nodes_.emplace_back(PStackNode(nullptr));
+  }
+  return stack;
+}
+
+INDEX_TEMPLATE_ARGUMENTS
+auto BPLUSTREE_TYPE::PStackPointer(PStack &stack) -> int { return stack.nodes_.size() - 1; }
+
+INDEX_TEMPLATE_ARGUMENTS
+void BPLUSTREE_TYPE::PStackSetRouteIdx(PStack &stack, int index, int route_idx) {
+  stack.nodes_[index].route_idx_ = route_idx;
+}
+
+INDEX_TEMPLATE_ARGUMENTS
+void BPLUSTREE_TYPE::PStackSetAttribute(PStack &stack, int index, int attri) {
+  stack.nodes_[index].attribute_ |= attri;
+}
+
+INDEX_TEMPLATE_ARGUMENTS
+auto BPLUSTREE_TYPE::PStackPush(PStack &stack, PStackNode node) -> int {
+  stack.nodes_.emplace_back(node);
+  if (stack.for_write) {
+    to_page_ptr(node.page_)->WLatch();
+  } else {
+    to_page_ptr(node.page_)->RLatch();
+  }
+  return PStackPointer(stack);
+}
+
+INDEX_TEMPLATE_ARGUMENTS
+void BPLUSTREE_TYPE::PStackPop(PStack &stack) {
+  BUSTUB_ASSERT(!stack.nodes_.empty(), "pop empty stack");
+
+  PStackNode node = stack.nodes_.back();
+  stack.nodes_.pop_back();
+
+  // nullptr page_ means we are locking root_page_id_
+  if (node.page_ == nullptr) {
+    if (stack.for_write) {
+      root_page_id_latch_.WUnlock();
+    } else {
+      root_page_id_latch_.RUnlock();
+    }
+    return;
+  }
+
+  if (stack.for_write) {
+    to_page_ptr(node.page_)->WUnlatch();
+  } else {
+    to_page_ptr(node.page_)->RUnlatch();
+  }
+
+  bool is_dirty = node.attribute_ & PStackNode_DIRTY;
+  bool is_todel = node.attribute_ & PStackNode_TODEL;
+
+  page_id_t page_id = node.page_->GetPageId();
+
+  buffer_pool_manager_->UnpinPage(page_id, is_dirty);
+  if (is_todel) {
+    buffer_pool_manager_->DeletePage(node.page_->GetPageId());
+  }
+}
+
+INDEX_TEMPLATE_ARGUMENTS
+void BPLUSTREE_TYPE::PStackRelease(PStack &stack) {
+  while (!stack.nodes_.empty()) {
+    PStackPop(stack);
+  }
+}
+
+INDEX_TEMPLATE_ARGUMENTS
+auto BPLUSTREE_TYPE::PageGetKey(BPlusTreePage *page, int index) -> KeyType {
+  if (page->IsLeafPage()) {
+    return static_cast<LeafPage *>(page)->KeyAt(index);
+  } else {
+    return static_cast<InternalPage *>(page)->KeyAt(index);
+  }
+}
+
+INDEX_TEMPLATE_ARGUMENTS
+auto BPLUSTREE_TYPE::BinarySearch(BPlusTreePage *page, const KeyType &key, int begin, int end) -> int {
+  if (begin > end) {
+    return begin;
+  }
+  int mid = begin + (end - begin) / 2;
+  auto mid_key = PageGetKey(page, mid);
+  if (comparator_(key, mid_key) > 0) {
+    return BinarySearch(page, key, mid + 1, end);
+  } else if (comparator_(key, mid_key) < 0) {
+    return BinarySearch(page, key, begin, mid - 1);
+  }
+  return mid;
+}
+
+INDEX_TEMPLATE_ARGUMENTS
+auto BPLUSTREE_TYPE::SearchPage(BPlusTreePage *page, const KeyType &key) -> int {
+  // We start from index 1 for internal page, since the
+  // first key at internal page is invalid.
+  // See comments in b_plus_tree_internal_page.h.
+  int begin = (page->IsLeafPage()) ? 0 : 1;
+  int end = page->GetSize();
+  int result = BinarySearch(page, key, begin, end);
+  // The result of BinarySearch stops at the first key >= search key.
+  // For leaf page, that is enough. For internal page, however,
+  // we still have no knowledge about going left or right.
+  if (!page->IsLeafPage()) {
+    auto found_key = PageGetKey(page, result);
+    if (result >= page->GetSize() || comparator_(key, found_key) < 0) {
+      result -= 1;
+    }
+  }
+  return result;
+}
+
 INDEX_TEMPLATE_ARGUMENTS
 void BPLUSTREE_TYPE::Search(const KeyType &key, LeafPage **leaf, int *index) {
   page_id_t target = root_page_id_;
