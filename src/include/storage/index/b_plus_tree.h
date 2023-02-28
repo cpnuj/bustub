@@ -119,11 +119,12 @@ class BPlusTree {
   auto PStackNew(bool for_write, bool lock_root) -> PStack;
   auto PStackPointer(PStack &stack) -> int;
   void PStackSetRouteIdx(PStack &stack, int index, int route_idx);
-  void PStackSetAttribute(PStack &stack, int index, int attri);
+  void PStackSetAttr(PStack &stack, int index, int attr);
   auto PStackPushLockedPage(PStack &stack, PStackNode node) -> int;
   auto PStackPushUnlockedPage(PStack &stack, PStackNode node) -> int;
   void PStackPop(PStack &stack);
   auto PStackTop(PStack &stack) -> PStackNode;
+  auto PStackGet(PStack &stack, int index) -> PStackNode;
   auto PStackEmpty(PStack &stack) -> bool;
   void PStackRelease(PStack &stack);
 
@@ -133,6 +134,10 @@ class BPlusTree {
   auto PageGetKey(BPlusTreePage *page, int index) -> KeyType;
   auto PageGetValue(BPlusTreePage *page, int index) -> ValueUnion;
   void PageSetKeyValue(BPlusTreePage *page, int index, const KeyType &key, const ValueUnion &val);
+  void PageInsertAt(BPlusTreePage *page, int index, const KeyType &key, const ValueUnion &val);
+  void PageAppend(BPlusTreePage *page, const KeyType &key, const ValueUnion &val);
+  auto PageOverflow(BPlusTreePage *page) -> bool;
+  auto PageSafeForInsert(BPlusTreePage *page) -> bool;
 
   void SetRootPage(BPlusTreePage *page);
   auto RootPageExist() -> bool;
@@ -143,19 +148,40 @@ class BPlusTree {
   auto SearchPage(BPlusTreePage *page, const KeyType &key) -> int;
   void Search(PStack &stack, const KeyType &key, unlock_cond_fn &&safe_for_release);
 
-  enum OpCode { OP_FINISH, OP_INSERT, OP_REMOVE, OP_REPLACE };
-  struct Op {
+  void SplitPage(PStack &stack, BPlusTreePage *lhs, KeyType *upkey, page_id_t *upval);
+
+  // The relationship between opcodes and operands are defined following:
+  //
+  // OP_FINISH
+  //    no oprands
+  //
+  // OP_INSERT
+  //    index_ : the index to insert at
+  //    k1_   : key to insert
+  //    v1_   : value to insert
+  //
+  // OP_REMOVE
+  // OP_REPLACE
+  //
+  // OP_ADDROOT
+  //    stack[top - 1] : new root's left child
+  //    stack[top]     : new root's right child
+  //    k1_            : new root's key at index 1
+  enum OpCode { OP_FINISH, OP_INSERT, OP_REMOVE, OP_REPLACE, OP_ADDROOT };
+  struct PState {
     OpCode opcode_;
     int index_;
-    KeyType key_;
-    ValueUnion val_;
-
-    Op(OpCode opcode = OP_FINISH, int index = -1, KeyType key = KeyType{}, ValueUnion val = ValueType{})
-        : opcode_(opcode), index_(index), key_(key), val_(val) {}
+    KeyType k1_;
+    ValueUnion v1_;
   };
 
-  auto DoOperation(PStack &stack, const Op &op) -> Op;
-  void Run(PStack &stack, Op op);
+  void DoInsert(PStack &stack, PState &state);
+  void DoAddRoot(PStack &stack, PState &state);
+
+  void DoOperation(PStack &stack, PState &state);
+  void Run(PStack &stack, PState &state);
+
+  auto FirstLeaf() -> LeafPage *;
 
   // member variable
   std::string index_name_;

@@ -55,9 +55,12 @@ auto B_PLUS_TREE_INTERNAL_PAGE_TYPE::ValueAt(int index) const -> ValueType {
 
 INDEX_TEMPLATE_ARGUMENTS
 void B_PLUS_TREE_INTERNAL_PAGE_TYPE::SetKeyValue(int index, const KeyType &key, const ValueType &val) {
-  BUSTUB_ASSERT(index < GetMaxSize(), "Invalid index");
+  BUSTUB_ASSERT(index <= GetMaxSize(), "Invalid index");
   array_[index] = std::pair(key, val);
 }
+
+INDEX_TEMPLATE_ARGUMENTS
+auto B_PLUS_TREE_INTERNAL_PAGE_TYPE::Overflow() const -> bool { return GetSize() > GetMaxSize(); }
 
 // valuetype for internalNode should be page id_t
 template class BPlusTreeInternalPage<GenericKey<4>, page_id_t, GenericComparator<4>>;

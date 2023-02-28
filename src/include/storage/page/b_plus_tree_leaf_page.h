@@ -19,7 +19,8 @@ namespace bustub {
 
 #define B_PLUS_TREE_LEAF_PAGE_TYPE BPlusTreeLeafPage<KeyType, ValueType, KeyComparator>
 #define LEAF_PAGE_HEADER_SIZE 28
-#define LEAF_PAGE_SIZE ((BUSTUB_PAGE_SIZE - LEAF_PAGE_HEADER_SIZE) / sizeof(MappingType))
+#define LEAF_OVERFLOW_SIZE ((BUSTUB_PAGE_SIZE - LEAF_PAGE_HEADER_SIZE) / sizeof(MappingType))
+#define LEAF_PAGE_SIZE (LEAF_OVERFLOW_SIZE - 1)
 
 /**
  * Store indexed key and record id(record id = page id combined with slot id,
@@ -52,6 +53,8 @@ class BPlusTreeLeafPage : public BPlusTreePage {
   auto KeyAt(int index) const -> KeyType;
   auto ValueAt(int index) const -> ValueType;
   void SetKeyValue(int index, KeyType const &key, ValueType const &val);
+
+  auto Overflow() const -> bool;
 
  private:
   page_id_t next_page_id_;

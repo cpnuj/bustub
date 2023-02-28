@@ -63,9 +63,12 @@ auto B_PLUS_TREE_LEAF_PAGE_TYPE::ValueAt(int index) const -> ValueType {
 
 INDEX_TEMPLATE_ARGUMENTS
 void B_PLUS_TREE_LEAF_PAGE_TYPE::SetKeyValue(int index, KeyType const &key, ValueType const &val) {
-  BUSTUB_ASSERT(index < GetSize(), "Invalid index");
+  BUSTUB_ASSERT(index < GetMaxSize(), "Invalid index");
   array_[index] = std::pair(key, val);
 }
+
+INDEX_TEMPLATE_ARGUMENTS
+auto B_PLUS_TREE_LEAF_PAGE_TYPE::Overflow() const -> bool { return GetSize() >= GetMaxSize(); }
 
 template class BPlusTreeLeafPage<GenericKey<4>, RID, GenericComparator<4>>;
 template class BPlusTreeLeafPage<GenericKey<8>, RID, GenericComparator<8>>;
