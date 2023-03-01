@@ -84,12 +84,12 @@ class BPlusTree {
   void ToString(BPlusTreePage *page, BufferPoolManager *bpm) const;
 
 // Macros for reinterpret_cast between Page and BPlusTreePage
-#define to_page_ptr(page) reinterpret_cast<Page *>(page)
-#define to_tree_ptr(page) reinterpret_cast<BPlusTreePage *>(page)
+#define to_page_ptr(page) (reinterpret_cast<Page *>(page))
+#define to_tree_ptr(page) (reinterpret_cast<BPlusTreePage *>(page))
 
 // Macros for static_cast BPlusTreePage to LeafPage and InternalPage
-#define to_leaf_ptr(page) static_cast<LeafPage *>(page)
-#define to_inte_ptr(page) static_cast<InternalPage *>(page)
+#define to_leaf_ptr(page) (static_cast<LeafPage *>(page))
+#define to_inte_ptr(page) (static_cast<InternalPage *>(page))
 
 // Some latch wrappers
 #define ROOT_PAGE_ID_LOCK nullptr
@@ -112,8 +112,8 @@ class BPlusTree {
 
   struct PStack {
     std::vector<PStackNode> nodes_;
-    bool for_write;  // for_write is true while this stack handling wlatch,
-                     // false while handling rlatch.
+    bool for_write_;  // for_write is true while this stack handling wlatch,
+                      // false while handling rlatch.
   };
 
   auto PStackNew(bool for_write, bool lock_root) -> PStack;
@@ -126,6 +126,7 @@ class BPlusTree {
   auto PStackTop(PStack &stack) -> PStackNode;
   auto PStackGet(PStack &stack, int index) -> PStackNode;
   auto PStackEmpty(PStack &stack) -> bool;
+  void PStackSwap(PStack &stack, int i1, int i2);
   void PStackRelease(PStack &stack);
 
   using ValueUnion = std::variant<page_id_t, ValueType>;
@@ -135,9 +136,14 @@ class BPlusTree {
   auto PageGetValue(BPlusTreePage *page, int index) -> ValueUnion;
   void PageSetKeyValue(BPlusTreePage *page, int index, const KeyType &key, const ValueUnion &val);
   void PageInsertAt(BPlusTreePage *page, int index, const KeyType &key, const ValueUnion &val);
+  void PageRemoveAt(BPlusTreePage *page, int index);
   void PageAppend(BPlusTreePage *page, const KeyType &key, const ValueUnion &val);
   auto PageOverflow(BPlusTreePage *page) -> bool;
+  auto PageUnderflow(BPlusTreePage *page) -> bool;
+  void PageMoveOne(BPlusTreePage *src, int src_idx, BPlusTreePage *dst, int dst_idx);
+  void PageResetKey(BPlusTreePage *page, int index, const KeyType &key);
   auto PageSafeForInsert(BPlusTreePage *page) -> bool;
+  auto PageSafeForRemove(BPlusTreePage *page) -> bool;
 
   void SetRootPage(BPlusTreePage *page);
   auto RootPageExist() -> bool;
@@ -150,24 +156,42 @@ class BPlusTree {
 
   void SplitPage(PStack &stack, BPlusTreePage *lhs, KeyType *upkey, page_id_t *upval);
 
+  //
   // The relationship between opcodes and operands are defined following:
   //
   // OP_FINISH
   //    no oprands
   //
   // OP_INSERT
-  //    index_ : the index to insert at
-  //    k1_   : key to insert
-  //    v1_   : value to insert
+  //    k1_        : key to insert
+  //    v1_        : value to insert
+  //    index_     : the index to insert at
+  //    stack[top] : node to do remove
   //
   // OP_REMOVE
-  // OP_REPLACE
+  //    index_     : the index to remove
+  //    stack[top] : node to do remove
   //
   // OP_ADDROOT
-  //    stack[top - 1] : new root's left child
-  //    stack[top]     : new root's right child
   //    k1_            : new root's key at index 1
-  enum OpCode { OP_FINISH, OP_INSERT, OP_REMOVE, OP_REPLACE, OP_ADDROOT };
+  //    stack[top]     : new root's right child
+  //    stack[top - 1] : new root's left child
+  //
+  // OP_REBALANCE
+  //    index_         : 1 for rebalance src position is right to src,
+  //                     0 for left
+  //    stack[top]     : rebalance src, provides an up-key to parent
+  //    stack[top - 1] : rebalance dst, receives a down-key from parent
+  //    stack[top - 2] : rebalance parent, receives an up-key and
+  //                     provides a down-key
+  // OP_MERGE
+  //    index_         : pointer from merge parent to merge rhs
+  //    stack[top]     : merge rhs
+  //    stack[top - 1] : merge lhs
+  //    stack[top - 2] : merge parent whose pointer to merge rhs
+  //                     should be deleted
+  //
+  enum OpCode { OP_FINISH, OP_INSERT, OP_REMOVE, OP_ADDROOT, OP_REBALANCE, OP_MERGE };
   struct PState {
     OpCode opcode_;
     int index_;
@@ -176,7 +200,10 @@ class BPlusTree {
   };
 
   void DoInsert(PStack &stack, PState &state);
+  void DoRemove(PStack &stack, PState &state);
   void DoAddRoot(PStack &stack, PState &state);
+  void DoRebalance(PStack &stack, PState &state);
+  void DoMerge(PStack &stack, PState &state);
 
   void DoOperation(PStack &stack, PState &state);
   void Run(PStack &stack, PState &state);
