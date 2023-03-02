@@ -30,7 +30,7 @@ auto InsertExecutor::Next([[maybe_unused]] Tuple *tuple, RID *rid) -> bool {
   TableInfo *tinfo = GetExecutorContext()->GetCatalog()->GetTable(plan_->table_oid_);
   Transaction *txn = GetExecutorContext()->GetTransaction();
 
-  int32_t i = 0;
+  int32_t cnt = 0;
   Tuple child_tuple{};
 
   for (;;) {
@@ -39,15 +39,15 @@ auto InsertExecutor::Next([[maybe_unused]] Tuple *tuple, RID *rid) -> bool {
       break;
     }
     assert(tinfo->table_->InsertTuple(child_tuple, rid, txn));
-    i++;
+    cnt++;
   }
 
   std::vector<Value> values{};
   values.reserve(GetOutputSchema().GetColumnCount());
-  values.emplace_back(Value(TypeId::INTEGER, i));
+  values.emplace_back(Value(TypeId::INTEGER, cnt));
   *tuple = Tuple{values, &GetOutputSchema()};
-  done_ = true;
 
+  done_ = true;
   return true;
 }
 
