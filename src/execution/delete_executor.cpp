@@ -30,6 +30,8 @@ auto DeleteExecutor::Next([[maybe_unused]] Tuple *tuple, RID *rid) -> bool {
   TableInfo *tinfo = GetExecutorContext()->GetCatalog()->GetTable(plan_->table_oid_);
   Transaction *txn = GetExecutorContext()->GetTransaction();
 
+  std::vector<IndexInfo *> indexes = GetExecutorContext()->GetCatalog()->GetTableIndexes(tinfo->name_);
+
   int32_t cnt = 0;
   Tuple child_tuple{};
   RID child_rid{};
@@ -40,6 +42,25 @@ auto DeleteExecutor::Next([[maybe_unused]] Tuple *tuple, RID *rid) -> bool {
       break;
     }
     assert(tinfo->table_->MarkDelete(child_rid, txn));
+
+    // delete index
+    {
+      for (IndexInfo *index_info : indexes) {
+        // generate key fixes index key schema
+        Schema schema = tinfo->schema_;
+        Schema key_schema = index_info->key_schema_;
+        std::vector<uint32_t> key_attrs;
+
+        for (const Column &col : key_schema.GetColumns()) {
+          key_attrs.emplace_back(schema.GetColIdx(col.GetName()));
+        }
+
+        // delete it
+        Tuple index_tuple = child_tuple.KeyFromTuple(schema, key_schema, key_attrs);
+        index_info->index_->DeleteEntry(index_tuple, child_rid, txn);
+      }
+    }
+
     cnt++;
   }
 

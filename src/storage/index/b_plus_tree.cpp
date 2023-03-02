@@ -181,6 +181,9 @@ void BPLUSTREE_TYPE::Remove(const KeyType &key, Transaction *transaction) {
 INDEX_TEMPLATE_ARGUMENTS
 auto BPLUSTREE_TYPE::Begin() -> INDEXITERATOR_TYPE {
   LeafPage *leaf = FirstLeaf();
+  if (leaf == nullptr) {
+    return End();
+  }
   auto result = INDEXITERATOR_TYPE(buffer_pool_manager_, leaf->GetPageId(), 0);
   buffer_pool_manager_->UnpinPage(leaf->GetPageId(), false);
   return result;
@@ -1096,6 +1099,9 @@ void BPLUSTREE_TYPE::Run(PStack &stack, PState &state) {
 
 INDEX_TEMPLATE_ARGUMENTS
 auto BPLUSTREE_TYPE::FirstLeaf() -> LeafPage * {
+  if (root_page_id_ == INVALID_PAGE_ID) {
+    return nullptr;
+  }
   page_id_t target = root_page_id_;
   BPlusTreePage *page;
   for (;;) {
