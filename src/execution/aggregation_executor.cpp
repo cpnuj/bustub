@@ -18,11 +18,47 @@ namespace bustub {
 
 AggregationExecutor::AggregationExecutor(ExecutorContext *exec_ctx, const AggregationPlanNode *plan,
                                          std::unique_ptr<AbstractExecutor> &&child)
-    : AbstractExecutor(exec_ctx) {}
+    : AbstractExecutor(exec_ctx),
+      plan_(plan),
+      child_(std::move(child)),
+      aht_(SimpleAggregationHashTable(plan->aggregates_, plan->agg_types_)),
+      aht_iterator_(aht_.End()) {}
 
-void AggregationExecutor::Init() {}
+void AggregationExecutor::Init() { child_->Init(); }
 
-auto AggregationExecutor::Next(Tuple *tuple, RID *rid) -> bool { return false; }
+auto AggregationExecutor::Next(Tuple *tuple, RID *rid) -> bool {
+  if (!ready_) {
+    // get ready
+    Tuple child_tuple{};
+    RID child_rid{};
+    for (;;) {
+      auto status = child_->Next(&child_tuple, &child_rid);
+      if (status == false) {
+        break;
+      }
+      auto key = MakeAggregateKey(&child_tuple);
+      auto val = MakeAggregateValue(&child_tuple);
+      aht_.InsertCombine(key, val);
+    }
+    ready_ = true;
+    aht_iterator_ = aht_.Begin();
+  }
+
+  if (aht_iterator_ == aht_.End()) {
+    return false;
+  }
+
+  auto values = aht_iterator_.Key().group_bys_;
+  auto aggres = aht_iterator_.Val().aggregates_;
+
+  values.insert(values.end(), aggres.begin(), aggres.end());
+
+  *tuple = Tuple{values, &GetOutputSchema()};
+
+  ++aht_iterator_;
+
+  return true;
+}
 
 auto AggregationExecutor::GetChildExecutor() const -> const AbstractExecutor * { return child_.get(); }
 

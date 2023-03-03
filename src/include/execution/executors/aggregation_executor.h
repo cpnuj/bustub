@@ -71,12 +71,29 @@ class SimpleAggregationHashTable {
    * @param input The input value
    */
   void CombineAggregateValues(AggregateValue *result, const AggregateValue &input) {
+    CmpBool cmp;
     for (uint32_t i = 0; i < agg_exprs_.size(); i++) {
       switch (agg_types_[i]) {
         case AggregationType::CountStarAggregate:
+          result->aggregates_[i] = result->aggregates_[i].Add(ValueFactory::GetIntegerValue(1));
+          break;
+
         case AggregationType::CountAggregate:
+          break;
         case AggregationType::SumAggregate:
+          break;
+
         case AggregationType::MinAggregate:
+          if (result->aggregates_[i].IsNull()) {
+            result->aggregates_[i] = input.aggregates_[i];
+          } else {
+            cmp = input.aggregates_[i].CompareLessThan(result->aggregates_[i]);
+            if (cmp == CmpBool::CmpTrue) {
+              result->aggregates_[i] = input.aggregates_[i];
+            }
+          }
+          break;
+
         case AggregationType::MaxAggregate:
           break;
       }
@@ -201,8 +218,10 @@ class AggregationExecutor : public AbstractExecutor {
   /** The child executor that produces tuples over which the aggregation is computed */
   std::unique_ptr<AbstractExecutor> child_;
   /** Simple aggregation hash table */
-  // TODO(Student): Uncomment SimpleAggregationHashTable aht_;
+  SimpleAggregationHashTable aht_;
   /** Simple aggregation hash table iterator */
-  // TODO(Student): Uncomment SimpleAggregationHashTable::Iterator aht_iterator_;
+  SimpleAggregationHashTable::Iterator aht_iterator_;
+  /** The agg data is ready ? */
+  bool ready_{false};
 };
 }  // namespace bustub
