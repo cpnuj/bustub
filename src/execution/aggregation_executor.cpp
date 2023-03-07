@@ -42,6 +42,14 @@ auto AggregationExecutor::Next(Tuple *tuple, RID *rid) -> bool {
     }
     ready_ = true;
     aht_iterator_ = aht_.Begin();
+
+    // special case: empty input and no group bys
+    if (aht_iterator_ == aht_.End()) {
+      if (plan_->group_bys_.size() == 0) {
+        *tuple = Tuple{aht_.GenerateInitialAggregateValue().aggregates_, &GetOutputSchema()};
+        return true;
+      }
+    }
   }
 
   if (aht_iterator_ == aht_.End()) {
