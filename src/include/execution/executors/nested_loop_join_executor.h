@@ -56,10 +56,21 @@ class NestedLoopJoinExecutor : public AbstractExecutor {
   /** The NestedLoopJoin plan node to be executed. */
   const NestedLoopJoinPlanNode *plan_;
   /** The left and right executor. */
-  std::unique_ptr<AbstractExecutor> &&lexecutor_;
-  std::unique_ptr<AbstractExecutor> &&rexecutor_;
+  std::unique_ptr<AbstractExecutor> lexecutor_;
+  std::unique_ptr<AbstractExecutor> rexecutor_;
+  /** The running left tuple. */
+  Tuple left_tuple_;
   /** The place stores right tuples. */
   std::vector<Tuple> right_tuples_;
+  /** The pointer to next right tuple that should be joined */
+  uint32_t right_tuples_next_{0};
+  /** How many tuples join successfully, used for left join */
+  uint32_t curr_run_succ_{0};
+
+  auto CombineTuples(const Tuple &tuple1, const Schema &schema1, const Tuple &tuple2, const Schema &schema2,
+                     const Schema &schema_out) -> Tuple;
+  auto NullValuesFromSchema(const Schema &schema) -> std::vector<Value>;
+  auto ValuesFromTuple(const Tuple &tuple, const Schema &schema) -> std::vector<Value>;
 };
 
 }  // namespace bustub
