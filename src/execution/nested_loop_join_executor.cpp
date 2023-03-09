@@ -63,10 +63,8 @@ auto NestedLoopJoinExecutor::Next(Tuple *tuple, RID *rid) -> bool {
       // if it requires a left join, and there is no success in this run,
       // emits a new tuple with left value and null right value.
       if (plan_->GetJoinType() == JoinType::LEFT && curr_run_succ_ == 0) {
-        auto lvalues = ValuesFromTuple(left_tuple_, left_schema);
-        auto rvalues = NullValuesFromSchema(right_schema);
-        lvalues.insert(lvalues.end(), rvalues.begin(), rvalues.end());
-        *tuple = Tuple{lvalues, &GetOutputSchema()};
+        *tuple =
+            ConcatTuples(left_tuple_, left_schema, NullTupleFromSchema(right_schema), right_schema, GetOutputSchema());
         curr_run_succ_++;
         return true;
       }
@@ -79,36 +77,22 @@ auto NestedLoopJoinExecutor::Next(Tuple *tuple, RID *rid) -> bool {
       // reset state for next run
       right_tuples_next_ = 0;
       curr_run_succ_ = 0;
+
+      continue;
     }
 
     auto right_tuple_ = right_tuples_[right_tuples_next_++];
 
     auto value = plan_->Predicate().EvaluateJoin(&left_tuple_, left_schema, &right_tuple_, right_schema);
     if (!value.IsNull() && value.GetAs<bool>()) {
-      auto lvalues = ValuesFromTuple(left_tuple_, left_schema);
-      auto rvalues = ValuesFromTuple(right_tuple_, right_schema);
-      lvalues.insert(lvalues.end(), rvalues.begin(), rvalues.end());
-      *tuple = Tuple{lvalues, &GetOutputSchema()};
+      *tuple = ConcatTuples(left_tuple_, left_schema, right_tuple_, right_schema, GetOutputSchema());
       curr_run_succ_++;
       return true;
     }
   }
 }
 
-auto NestedLoopJoinExecutor::CombineTuples(const Tuple &tuple1, const Schema &schema1, const Tuple &tuple2,
-                                           const Schema &schema2, const Schema &schema_out) -> Tuple {
-  std::vector<Value> values{};
-  values.reserve(schema_out.GetColumnCount());
-  for (uint32_t i = 0; i < schema1.GetColumnCount(); i++) {
-    values.push_back(tuple1.GetValue(&schema1, i));
-  }
-  for (uint32_t i = 0; i < schema2.GetColumnCount(); i++) {
-    values.push_back(tuple2.GetValue(&schema2, i));
-  }
-  return Tuple{values, &schema_out};
-}
-
-auto NestedLoopJoinExecutor::NullValuesFromSchema(const Schema &schema) -> std::vector<Value> {
+auto NullValuesFromSchema(const Schema &schema) -> std::vector<Value> {
   std::vector<Value> values{};
   values.reserve(schema.GetColumnCount());
   for (const auto &col : schema.GetColumns()) {
@@ -117,13 +101,42 @@ auto NestedLoopJoinExecutor::NullValuesFromSchema(const Schema &schema) -> std::
   return values;
 }
 
-auto NestedLoopJoinExecutor::ValuesFromTuple(const Tuple &tuple, const Schema &schema) -> std::vector<Value> {
+auto NullTupleFromSchema(const Schema &schema) -> Tuple {
+  std::vector<Value> values{};
+  values.reserve(schema.GetColumnCount());
+  for (const auto &col : schema.GetColumns()) {
+    values.push_back(ValueFactory::GetNullValueByType(col.GetType()));
+  }
+  return Tuple{values, &schema};
+}
+
+auto ValuesFromTuple(const Tuple &tuple, const Schema &schema) -> std::vector<Value> {
   std::vector<Value> values{};
   values.reserve(schema.GetColumnCount());
   for (uint32_t i = 0; i < schema.GetColumnCount(); i++) {
     values.push_back(tuple.GetValue(&schema, i));
   }
   return values;
+}
+
+void CopyTupleValues(std::vector<Value> &dst, const Tuple &tuple, const Schema &schema) {
+  for (uint32_t i = 0; i < schema.GetColumnCount(); i++) {
+    if (tuple.IsNull(&schema, i)) {
+      auto col_type = schema.GetColumn(i).GetType();
+      dst.push_back(ValueFactory::GetNullValueByType(col_type));
+    } else {
+      dst.push_back(tuple.GetValue(&schema, i));
+    }
+  }
+}
+
+auto ConcatTuples(const Tuple &tuple1, const Schema &schema1, const Tuple &tuple2, const Schema &schema2,
+                  const Schema &schema_out) -> Tuple {
+  std::vector<Value> values{};
+  values.reserve(schema_out.GetColumnCount());
+  CopyTupleValues(values, tuple1, schema1);
+  CopyTupleValues(values, tuple2, schema2);
+  return Tuple{values, &schema_out};
 }
 
 }  // namespace bustub

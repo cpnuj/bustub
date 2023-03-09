@@ -66,11 +66,16 @@ class NestedLoopJoinExecutor : public AbstractExecutor {
   uint32_t right_tuples_next_{0};
   /** How many tuples join successfully, used for left join */
   uint32_t curr_run_succ_{0};
-
-  auto CombineTuples(const Tuple &tuple1, const Schema &schema1, const Tuple &tuple2, const Schema &schema2,
-                     const Schema &schema_out) -> Tuple;
-  auto NullValuesFromSchema(const Schema &schema) -> std::vector<Value>;
-  auto ValuesFromTuple(const Tuple &tuple, const Schema &schema) -> std::vector<Value>;
 };
+
+auto NullValuesFromSchema(const Schema &schema) -> std::vector<Value>;
+auto ValuesFromTuple(const Tuple &tuple, const Schema &schema) -> std::vector<Value>;
+
+auto NullTupleFromSchema(const Schema &schema) -> Tuple;
+
+void CopyTupleValues(std::vector<Value> &dst, const Tuple &tuple, const Schema &schema);
+
+auto ConcatTuples(const Tuple &tuple1, const Schema &schema1, const Tuple &tuple2, const Schema &schema2,
+                  const Schema &schema_out) -> Tuple;
 
 }  // namespace bustub

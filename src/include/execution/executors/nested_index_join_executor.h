@@ -50,5 +50,12 @@ class NestIndexJoinExecutor : public AbstractExecutor {
  private:
   /** The nested index join plan node. */
   const NestedIndexJoinPlanNode *plan_;
+  /** The child executor from which tuples are obtained */
+  std::unique_ptr<AbstractExecutor> child_executor_;
+  /** The predicate key column, used for constructing key tuple */
+  std::vector<Column> key_column_;
 };
+
+auto ConcatTuples(const Tuple &tuple1, const Schema &schema1, const Tuple &tuple2, const Schema &schema2,
+                  const Schema &schema_out) -> Tuple;
 }  // namespace bustub
