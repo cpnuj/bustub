@@ -56,6 +56,4 @@ class NestIndexJoinExecutor : public AbstractExecutor {
   std::vector<Column> key_column_;
 };
 
-auto ConcatTuples(const Tuple &tuple1, const Schema &schema1, const Tuple &tuple2, const Schema &schema2,
-                  const Schema &schema_out) -> Tuple;
 }  // namespace bustub

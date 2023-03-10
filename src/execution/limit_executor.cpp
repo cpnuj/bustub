@@ -21,10 +21,10 @@ LimitExecutor::LimitExecutor(ExecutorContext *exec_ctx, const LimitPlanNode *pla
 void LimitExecutor::Init() { child_executor_->Init(); }
 
 auto LimitExecutor::Next(Tuple *tuple, RID *rid) -> bool {
-  if (cnt >= plan_->GetLimit()) {
+  if (cnt_ >= plan_->GetLimit()) {
     return false;
   }
-  cnt++;
+  cnt_++;
   return child_executor_->Next(tuple, rid);
 }
 

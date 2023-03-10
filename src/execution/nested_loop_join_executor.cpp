@@ -81,11 +81,11 @@ auto NestedLoopJoinExecutor::Next(Tuple *tuple, RID *rid) -> bool {
       continue;
     }
 
-    auto right_tuple_ = right_tuples_[right_tuples_next_++];
+    auto right_tuple = right_tuples_[right_tuples_next_++];
 
-    auto value = plan_->Predicate().EvaluateJoin(&left_tuple_, left_schema, &right_tuple_, right_schema);
+    auto value = plan_->Predicate().EvaluateJoin(&left_tuple_, left_schema, &right_tuple, right_schema);
     if (!value.IsNull() && value.GetAs<bool>()) {
-      *tuple = ConcatTuples(left_tuple_, left_schema, right_tuple_, right_schema, GetOutputSchema());
+      *tuple = ConcatTuples(left_tuple_, left_schema, right_tuple, right_schema, GetOutputSchema());
       curr_run_succ_++;
       return true;
     }

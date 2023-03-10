@@ -18,7 +18,7 @@ IndexScanExecutor::IndexScanExecutor(ExecutorContext *exec_ctx, const IndexScanP
 void IndexScanExecutor::Init() {
   IndexInfo *iinfo = GetExecutorContext()->GetCatalog()->GetIndex(plan_->GetIndexOid());
   // Transaction *txn = GetExecutorContext()->GetTransaction();
-  BPlusTreeIndexForOneIntegerColumn *btidx = dynamic_cast<BPlusTreeIndexForOneIntegerColumn *>(iinfo->index_.get());
+  auto *btidx = dynamic_cast<BPlusTreeIndexForOneIntegerColumn *>(iinfo->index_.get());
   iter_ = btidx->GetBeginIterator();
 }
 

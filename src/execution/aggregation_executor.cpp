@@ -33,7 +33,7 @@ auto AggregationExecutor::Next(Tuple *tuple, RID *rid) -> bool {
     RID child_rid{};
     for (;;) {
       auto status = child_->Next(&child_tuple, &child_rid);
-      if (status == false) {
+      if (!status) {
         break;
       }
       auto key = MakeAggregateKey(&child_tuple);
@@ -45,7 +45,7 @@ auto AggregationExecutor::Next(Tuple *tuple, RID *rid) -> bool {
 
     // special case: empty input and no group bys
     if (aht_iterator_ == aht_.End()) {
-      if (plan_->group_bys_.size() == 0) {
+      if (plan_->group_bys_.empty()) {
         *tuple = Tuple{aht_.GenerateInitialAggregateValue().aggregates_, &GetOutputSchema()};
         return true;
       }

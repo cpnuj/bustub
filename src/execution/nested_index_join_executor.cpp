@@ -50,7 +50,7 @@ auto NestIndexJoinExecutor::Next(Tuple *tuple, RID *rid) -> bool {
     std::vector<RID> result;
     btidx->ScanKey(key_tuple, &result, txn);
 
-    assert(result.size() == 0 || result.size() == 1);
+    assert(result.empty() || result.size() == 1);
 
     if (result.size() == 1) {
       Tuple inner_tuple;
@@ -58,12 +58,11 @@ auto NestIndexJoinExecutor::Next(Tuple *tuple, RID *rid) -> bool {
       *tuple =
           ConcatTuples(outer_tuple, child_executor_->GetOutputSchema(), inner_tuple, tinfo->schema_, GetOutputSchema());
       return true;
-    } else {
-      if (plan_->GetJoinType() == JoinType::LEFT) {
-        *tuple = ConcatTuples(outer_tuple, child_executor_->GetOutputSchema(), NullTupleFromSchema(tinfo->schema_),
-                              tinfo->schema_, GetOutputSchema());
-        return true;
-      }
+    }
+    if (plan_->GetJoinType() == JoinType::LEFT) {
+      *tuple = ConcatTuples(outer_tuple, child_executor_->GetOutputSchema(), NullTupleFromSchema(tinfo->schema_),
+                            tinfo->schema_, GetOutputSchema());
+      return true;
     }
   }
 }
