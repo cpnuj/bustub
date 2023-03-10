@@ -58,36 +58,37 @@ class SortExecutor : public AbstractExecutor {
   std::vector<Tuple> tuples_;
   /** The sorted tuples iter */
   std::vector<Tuple>::iterator iter_;
-
-  struct CompFn {
-    const Schema &schema_;
-    const std::vector<std::pair<OrderByType, AbstractExpressionRef>> &order_bys_;
-
-    auto operator()(Tuple &t1, Tuple &t2) const -> bool {
-      for (const auto &order_by : order_bys_) {
-        auto [t, expr] = order_by;
-        auto v1 = expr->Evaluate(&t1, schema_);
-        auto v2 = expr->Evaluate(&t2, schema_);
-
-        auto result = v1.CompareEquals(v2);
-        if (result == CmpBool::CmpTrue) {
-          continue;
-        }
-
-        if (t == OrderByType::DESC) {
-          result = v1.CompareGreaterThan(v2);
-        } else {
-          result = v1.CompareLessThan(v2);
-        }
-
-        return result == CmpBool::CmpTrue;
-      }
-      // all same got here
-      return false;
-    }
-
-    explicit CompFn(const Schema &schema, const std::vector<std::pair<OrderByType, AbstractExpressionRef>> &order_bys)
-        : schema_(schema), order_bys_(order_bys) {}
-  };
 };
+
+struct CompFn {
+  const Schema &schema_;
+  const std::vector<std::pair<OrderByType, AbstractExpressionRef>> &order_bys_;
+
+  auto operator()(Tuple &t1, Tuple &t2) const -> bool {
+    for (const auto &order_by : order_bys_) {
+      auto [t, expr] = order_by;
+      auto v1 = expr->Evaluate(&t1, schema_);
+      auto v2 = expr->Evaluate(&t2, schema_);
+
+      auto result = v1.CompareEquals(v2);
+      if (result == CmpBool::CmpTrue) {
+        continue;
+      }
+
+      if (t == OrderByType::DESC) {
+        result = v1.CompareGreaterThan(v2);
+      } else {
+        result = v1.CompareLessThan(v2);
+      }
+
+      return result == CmpBool::CmpTrue;
+    }
+    // all same got here
+    return false;
+  }
+
+  explicit CompFn(const Schema &schema, const std::vector<std::pair<OrderByType, AbstractExpressionRef>> &order_bys)
+      : schema_(schema), order_bys_(order_bys) {}
+};
+
 }  // namespace bustub
