@@ -15,12 +15,23 @@
 #include <memory>
 #include <utility>
 
+#include "common/util/hash_util.h"
 #include "execution/executor_context.h"
 #include "execution/executors/abstract_executor.h"
 #include "execution/plans/hash_join_plan.h"
 #include "storage/table/tuple.h"
 
 namespace bustub {
+
+struct ValueHash {
+  auto operator()(const bustub::Value &key) const -> std::size_t { return bustub::HashUtil::HashValue(&key); }
+};
+
+struct ValueEqual {
+  auto operator()(const bustub::Value &v1, const bustub::Value &v2) const -> bool {
+    return v1.CompareEquals(v2) == CmpBool::CmpTrue;
+  }
+};
 
 /**
  * HashJoinExecutor executes a nested-loop JOIN on two tables.
@@ -57,8 +68,17 @@ class HashJoinExecutor : public AbstractExecutor {
   /** The child executor from which tuples are obtained */
   std::unique_ptr<AbstractExecutor> left_child_;
   std::unique_ptr<AbstractExecutor> right_child_;
-  /***/
-  std::map<std::vector<Value>, std::vector<Tuple>> table_;
+
+  struct JoinKey : Value {
+    /* data */
+  };
+
+  /** The hash table mapping join value to fulfilled tuples from right */
+  std::unordered_map<Value, std::vector<Tuple>, ValueHash, ValueEqual> table_{};
+  /** The left tuples and a ref to right tuples to join */
+  std::vector<std::pair<Tuple, std::vector<Tuple> *>> left_tuples_;
+  size_t left_ptr;
+  size_t right_ptr;
 };
 
 }  // namespace bustub
