@@ -103,6 +103,25 @@ class Optimizer {
    */
   auto EstimatedCardinality(const std::string &table_name) -> std::optional<size_t>;
 
+  auto TrySplitPredicates(AbstractExpressionRef predicates) -> std::vector<AbstractExpressionRef>;
+
+  /**
+   * @brief optimize split conjunctive predicates
+   */
+  auto OptimizeSplitPredicates(const AbstractPlanNodeRef &plan) -> AbstractPlanNodeRef;
+
+  auto TryRewriteExprForLeft(const AbstractExpressionRef &expr, size_t left_col_cnt, size_t right_col_cnt, bool *succ)
+      -> AbstractExpressionRef;
+  auto TryRewriteExprForRight(const AbstractExpressionRef &expr, size_t left_col_cnt, size_t right_col_cnt, bool *succ)
+      -> AbstractExpressionRef;
+
+  auto TryPushdownPredicates(const AbstractPlanNodeRef &plan, AbstractExpressionRef predicate) -> AbstractPlanNodeRef;
+
+  /**
+   * @brief optimize pushdown predicates
+   */
+  auto OptimizePushdownPredicates(const AbstractPlanNodeRef &plan) -> AbstractPlanNodeRef;
+
   /** Catalog will be used during the planning process. USERS SHOULD ENSURE IT OUTLIVES
    * OPTIMIZER, otherwise it's a dangling reference.
    */
