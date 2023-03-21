@@ -1,5 +1,7 @@
 #pragma once
 
+#include <set>
+#include <map>
 #include <memory>
 #include <string>
 #include <tuple>
@@ -121,6 +123,25 @@ class Optimizer {
    * @brief optimize pushdown predicates
    */
   auto OptimizePushdownPredicates(const AbstractPlanNodeRef &plan) -> AbstractPlanNodeRef;
+
+  void SplitExprForJoin(const AbstractExpressionRef &expr, size_t left_col_cnt, size_t right_col_cnt, std::map<size_t, TypeId> &left,
+                        std::map<size_t, TypeId> &right);
+
+  auto SplitExprsForJoin(std::vector<AbstractExpressionRef> &expressions, size_t left_col_cnt, size_t right_col_cnt)
+      -> std::pair<std::map<size_t, TypeId>, std::map<size_t, TypeId>>;
+
+  void ComputeRequiredIdx(const AbstractExpressionRef &expr, std::set<size_t> &indice);
+
+  auto ComputePushdownInfoForJoin(std::vector<AbstractExpressionRef> &expressions, size_t left_col_cnt, size_t right_col_cnt)
+      -> std::pair<std::map<size_t, TypeId>, std::map<size_t, TypeId>>;
+
+  auto TryPushdownProjection(const AbstractPlanNodeRef &plan, std::vector<AbstractExpressionRef> expressions)
+      -> AbstractPlanNodeRef;
+
+  /**
+   * @brief optimize projection pushdown
+   */
+  auto OptimizePushdownProjection(const AbstractPlanNodeRef &plan) -> AbstractPlanNodeRef;
 
   /** Catalog will be used during the planning process. USERS SHOULD ENSURE IT OUTLIVES
    * OPTIMIZER, otherwise it's a dangling reference.
