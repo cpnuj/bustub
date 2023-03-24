@@ -150,53 +150,22 @@ auto Optimizer::OptimizePushdownPredicates(const AbstractPlanNodeRef &plan) -> A
   return optimized_plan;
 }
 
-void Optimizer::SplitExprForJoin(const AbstractExpressionRef &expr, size_t left_col_cnt, size_t right_col_cnt, std::map<size_t, TypeId> &left,
-                        std::map<size_t, TypeId> &right) {
+void Optimizer::ComputeRequiredIdx(const AbstractExpressionRef &expr, std::set<size_t> &indexes) {
   for (const auto &child : expr->GetChildren()) {
-    SplitExprForJoin(child, left_col_cnt, right_col_cnt, left, right);
+    ComputeRequiredIdx(child, indexes);
   }
   const auto *column_value_expr = dynamic_cast<const ColumnValueExpression *>(expr.get());
   if (column_value_expr != nullptr) {
-    BUSTUB_ENSURE(column_value_expr->GetTupleIdx() == 0, "tuple_idx cannot be value other than 0 before this stage.")
-    auto col_idx = column_value_expr->GetColIdx();
-    if (col_idx < left_col_cnt) {
-      left.insert({col_idx, column_value_expr->GetReturnType()});
-    } else if (col_idx >= left_col_cnt && col_idx < left_col_cnt + right_col_cnt) {
-      right.insert({col_idx - right_col_cnt, column_value_expr->GetReturnType()});
-    }
-    throw bustub::Exception("col_idx not in range");
+    indexes.insert(column_value_expr->GetColIdx());
   }
 }
 
-auto Optimizer::SplitExprsForJoin(std::vector<AbstractExpressionRef> &exprs, size_t left_col_cnt, size_t right_col_cnt)
-    -> std::pair<std::map<size_t, TypeId>, std::map<size_t, TypeId>> {
-  std::map<size_t, TypeId> left, right;
-  for (const auto &expr : exprs) {
-    SplitExprForJoin(expr, left_col_cnt, right_col_cnt, left, right);
-  }
-  // std::vector<AbstractExpressionRef> left_res, right_res;
-  // for (auto it = left.begin(); it != left.end(); it++) {
-  //   left_res.emplace_back(std::make_shared<ColumnValueExpression>(0, it->first, it->second));
-  // }
-  // for (auto it = right.begin(); it != right.end(); it++) {
-  //   right_res.emplace_back(std::make_shared<ColumnValueExpression>(0, it->first, it->second));
-  // }
-  return std::make_pair(std::move(left), std::move(right));
-}
-
-void Optimizer::ComputeRequiredIdx(const AbstractExpressionRef &expr, std::set<size_t> &indice) {
-  for (const auto &child : expr->GetChildren()) {
-    ComputeRequiredIdx(child, indice);
-  }
-  const auto *column_value_expr = dynamic_cast<const ColumnValueExpression *>(expr.get());
-  if (column_value_expr != nullptr) {
-    indice.insert(column_value_expr->GetColIdx());
-  }
-}
-
-auto Optimizer::TryPushdownProjection(const AbstractPlanNodeRef &plan, std::vector<AbstractExpressionRef> expressions)
+auto Optimizer::TryPushdownProjection(const AbstractPlanNodeRef &plan, const AbstractPlanNodeRef &parent)
     -> AbstractPlanNodeRef {
-  // We are give the required expressions from our father plan node.
+  BUSTUB_ASSERT(parent->GetType() == PlanType::Projection, "parent plan must be projection");
+
+  const auto &proj_plan = dynamic_cast<const ProjectionPlanNode &>(*parent);
+  const auto &exprs = proj_plan.GetExpressions();
 
   //
   // For join node, the father expressions may retrive data from both of our children.
@@ -204,7 +173,7 @@ auto Optimizer::TryPushdownProjection(const AbstractPlanNodeRef &plan, std::vect
   // First, we should compute the needed projection index for our children according to
   // the father expressions and the join condition. We should get the needed projection
   // index for left and right child.
-  // 
+  //
   // Second, we construct the pushdown projection plan node for left child and right
   // child, according to their need projection index, and then pushdown the new node.
   //
@@ -212,11 +181,28 @@ auto Optimizer::TryPushdownProjection(const AbstractPlanNodeRef &plan, std::vect
   //
   if (plan->GetType() == PlanType::HashJoin) {
     const auto &hjoin_plan = dynamic_cast<const HashJoinPlanNode &>(*plan);
+
+    // step 1. compute the required projection indexes from projection expressions
+    std::set<size_t> proj_indexes;
+    std::for_each(exprs.begin(), exprs.end(), [&](auto &expr) { ComputeRequiredIdx(expr, proj_indexes); });
+
+    // step 2. add required join indexes, the indexes from right child need to be re-computed
+    std::set<size_t> join_indexes;
+    std::copy(proj_indexes.begin(), proj_indexes.end(), std::inserter(join_indexes, join_indexes.begin()));
+    ComputeRequiredIdx(hjoin_plan.left_key_expression_, join_indexes);
+
+    // right join indexes need re-compute
+    std::set<size_t> right_indexes;
+    ComputeRequiredIdx(hjoin_plan.right_key_expression_, right_indexes);
+    size_t left_col_cnt = hjoin_plan.GetLeftPlan()->OutputSchema().GetColumnCount();
+    std::for_each(right_indexes.begin(), right_indexes.end(),
+                  [&join_indexes, left_col_cnt](size_t idx) { join_indexes.insert(idx + left_col_cnt); });
   }
   if (plan->GetType() == PlanType::Aggregation) {
-    const auto &agg_plan = dynamic_cast<const AggregationPlanNode &>(*plan);
+    // const auto &agg_plan = dynamic_cast<const AggregationPlanNode &>(*plan);
   }
   // else stop trying
+  return parent;
 }
 
 auto Optimizer::OptimizePushdownProjection(const AbstractPlanNodeRef &plan) -> AbstractPlanNodeRef {
@@ -227,7 +213,10 @@ auto Optimizer::OptimizePushdownProjection(const AbstractPlanNodeRef &plan) -> A
   auto optimized_plan = plan->CloneWithChildren(std::move(children));
 
   if (optimized_plan->GetType() == PlanType::Projection) {
-    const auto &prj_plan = dynamic_cast<const ProjectionPlanNode &>(*optimized_plan);
+    // const auto &proj_plan = dynamic_cast<const ProjectionPlanNode &>(*optimized_plan);
+    BUSTUB_ENSURE(optimized_plan->children_.size() == 1, "Filter with multiple children?? Impossible!");
+    const auto &child_plan = optimized_plan->children_[0];
+    return TryPushdownProjection(child_plan, std::move(optimized_plan));
   }
 
   return optimized_plan;
@@ -243,6 +232,7 @@ auto Optimizer::OptimizeCustom(const AbstractPlanNodeRef &plan) -> AbstractPlanN
   p = OptimizeNLJAsHashJoin(p);  // Enable this rule after you have implemented hash join.
   p = OptimizeOrderByAsIndexScan(p);
   p = OptimizeSortLimitAsTopN(p);
+  p = OptimizePushdownProjection(p);
   return p;
 }
 

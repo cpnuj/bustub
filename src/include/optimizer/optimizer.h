@@ -1,8 +1,8 @@
 #pragma once
 
-#include <set>
 #include <map>
 #include <memory>
+#include <set>
 #include <string>
 #include <tuple>
 #include <unordered_map>
@@ -124,18 +124,19 @@ class Optimizer {
    */
   auto OptimizePushdownPredicates(const AbstractPlanNodeRef &plan) -> AbstractPlanNodeRef;
 
-  void SplitExprForJoin(const AbstractExpressionRef &expr, size_t left_col_cnt, size_t right_col_cnt, std::map<size_t, TypeId> &left,
-                        std::map<size_t, TypeId> &right);
+  void SplitExprForJoin(const AbstractExpressionRef &expr, size_t left_col_cnt, size_t right_col_cnt,
+                        std::map<size_t, TypeId> &left, std::map<size_t, TypeId> &right);
 
   auto SplitExprsForJoin(std::vector<AbstractExpressionRef> &expressions, size_t left_col_cnt, size_t right_col_cnt)
       -> std::pair<std::map<size_t, TypeId>, std::map<size_t, TypeId>>;
 
   void ComputeRequiredIdx(const AbstractExpressionRef &expr, std::set<size_t> &indice);
 
-  auto ComputePushdownInfoForJoin(std::vector<AbstractExpressionRef> &expressions, size_t left_col_cnt, size_t right_col_cnt)
+  auto ComputePushdownInfoForJoin(std::vector<AbstractExpressionRef> &expressions, size_t left_col_cnt,
+                                  size_t right_col_cnt)
       -> std::pair<std::map<size_t, TypeId>, std::map<size_t, TypeId>>;
 
-  auto TryPushdownProjection(const AbstractPlanNodeRef &plan, std::vector<AbstractExpressionRef> expressions)
+  auto TryPushdownProjection(const AbstractPlanNodeRef &plan, const AbstractPlanNodeRef &parent_plan)
       -> AbstractPlanNodeRef;
 
   /**
