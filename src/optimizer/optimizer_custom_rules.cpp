@@ -150,14 +150,37 @@ auto Optimizer::OptimizePushdownPredicates(const AbstractPlanNodeRef &plan) -> A
   return optimized_plan;
 }
 
-void Optimizer::ComputeRequiredIdx(const AbstractExpressionRef &expr, std::set<size_t> &indexes) {
+void Optimizer::ComputeRequiredIdx(const AbstractExpressionRef &expr, std::set<size_t> &indexes, size_t left_col_cnt,
+                                   size_t right_col_cnt) {
   for (const auto &child : expr->GetChildren()) {
-    ComputeRequiredIdx(child, indexes);
+    ComputeRequiredIdx(child, indexes, left_col_cnt, right_col_cnt);
   }
   const auto *column_value_expr = dynamic_cast<const ColumnValueExpression *>(expr.get());
   if (column_value_expr != nullptr) {
-    indexes.insert(column_value_expr->GetColIdx());
+    if (column_value_expr->GetTupleIdx() == 0) {
+      indexes.insert(column_value_expr->GetColIdx());
+    } else if (column_value_expr->GetTupleIdx() == 1) {
+      indexes.insert(column_value_expr->GetColIdx() + left_col_cnt);
+    } else {
+      throw bustub::Exception("invalid column value tuple index");
+    }
   }
+}
+
+auto Optimizer::RewriteExprForProj(const AbstractExpressionRef &expr, const std::vector<std::set<size_t>> &proj_dir)
+    -> AbstractExpressionRef {
+  std::vector<AbstractExpressionRef> children;
+  for (const auto &child : expr->GetChildren()) {
+    children.emplace_back(RewriteExprForProj(child, proj_dir));
+  }
+  const auto *column_value_expr = dynamic_cast<const ColumnValueExpression *>(expr.get());
+  if (column_value_expr != nullptr) {
+    auto tup_idx = column_value_expr->GetTupleIdx();
+    auto col_idx = column_value_expr->GetColIdx();
+    auto new_idx = std::distance(proj_dir[tup_idx].begin(), proj_dir[tup_idx].find(col_idx));
+    return std::make_shared<ColumnValueExpression>(tup_idx, new_idx, column_value_expr->GetReturnType());
+  }
+  return expr->CloneWithChildren(std::move(children));
 }
 
 auto Optimizer::TryPushdownProjection(const AbstractPlanNodeRef &plan, const AbstractPlanNodeRef &parent)
@@ -179,25 +202,87 @@ auto Optimizer::TryPushdownProjection(const AbstractPlanNodeRef &plan, const Abs
   //
   // Last, we should rewrite our join condition to fix the new scheme of our children.
   //
-  if (plan->GetType() == PlanType::HashJoin) {
-    const auto &hjoin_plan = dynamic_cast<const HashJoinPlanNode &>(*plan);
+  if (plan->GetType() == PlanType::NestedLoopJoin) {
+    const auto &nlj_plan = dynamic_cast<const NestedLoopJoinPlanNode &>(*plan);
+    const auto &left_plan = nlj_plan.GetLeftPlan();
+    const auto &right_plan = nlj_plan.GetRightPlan();
+    size_t left_col_cnt = left_plan->OutputSchema().GetColumnCount();
+    size_t right_col_cnt = right_plan->OutputSchema().GetColumnCount();
 
     // step 1. compute the required projection indexes from projection expressions
     std::set<size_t> proj_indexes;
-    std::for_each(exprs.begin(), exprs.end(), [&](auto &expr) { ComputeRequiredIdx(expr, proj_indexes); });
+    std::for_each(exprs.begin(), exprs.end(), [&](auto &expr) {
+      ComputeRequiredIdx(expr, proj_indexes, nlj_plan.OutputSchema().GetColumnCount(), 0);
+    });
 
-    // step 2. add required join indexes, the indexes from right child need to be re-computed
+    // step 2. add required join indexes
     std::set<size_t> join_indexes;
     std::copy(proj_indexes.begin(), proj_indexes.end(), std::inserter(join_indexes, join_indexes.begin()));
-    ComputeRequiredIdx(hjoin_plan.left_key_expression_, join_indexes);
+    ComputeRequiredIdx(nlj_plan.predicate_, join_indexes, left_col_cnt, right_col_cnt);
 
-    // right join indexes need re-compute
-    std::set<size_t> right_indexes;
-    ComputeRequiredIdx(hjoin_plan.right_key_expression_, right_indexes);
-    size_t left_col_cnt = hjoin_plan.GetLeftPlan()->OutputSchema().GetColumnCount();
-    std::for_each(right_indexes.begin(), right_indexes.end(),
-                  [&join_indexes, left_col_cnt](size_t idx) { join_indexes.insert(idx + left_col_cnt); });
+    // step 3. compute projection expressions pushdown to next plan
+    std::set<size_t> left_proj_indexes, right_proj_indexes;
+    std::for_each(join_indexes.begin(), join_indexes.end(),
+                  [left_col_cnt, right_col_cnt, &left_proj_indexes, &right_proj_indexes](size_t idx) {
+                    if (idx < left_col_cnt) {
+                      left_proj_indexes.insert(idx);
+                    } else {
+                      right_proj_indexes.insert(idx - left_col_cnt);
+                    }
+                  });
+
+    // build schema and projection expressions
+
+    // for left
+    std::vector<Column> left_cols;
+    std::vector<AbstractExpressionRef> left_proj_exprs;
+
+    std::for_each(left_proj_indexes.begin(), left_proj_indexes.end(), [&](size_t idx) {
+      const auto &column = left_plan->OutputSchema().GetColumn(idx);
+      left_cols.emplace_back(column);
+      left_proj_exprs.emplace_back(std::make_shared<ColumnValueExpression>(0, idx, column.GetType()));
+    });
+
+    auto left_child = std::make_shared<ProjectionPlanNode>(
+        std::make_shared<const Schema>(left_cols), std::move(left_proj_exprs), std::move(nlj_plan.children_[0]));
+
+    // for right
+    std::vector<Column> right_cols;
+    std::vector<AbstractExpressionRef> right_proj_exprs;
+
+    std::for_each(right_proj_indexes.begin(), right_proj_indexes.end(), [&](size_t idx) {
+      const auto &column = right_plan->OutputSchema().GetColumn(idx);
+      right_cols.emplace_back(column);
+      right_proj_exprs.emplace_back(std::make_shared<ColumnValueExpression>(0, idx, column.GetType()));
+    });
+
+    auto right_child = std::make_shared<ProjectionPlanNode>(
+        std::make_shared<const Schema>(right_cols), std::move(right_proj_exprs), std::move(nlj_plan.children_[1]));
+
+    // TODO: pushdown the projection plans here
+
+    // step 4. rewrite join
+    auto predicate =
+        RewriteExprForProj(nlj_plan.predicate_, std::vector<std::set<size_t>>{left_proj_indexes, right_proj_indexes});
+
+    std::vector<Column> new_join_schema;
+    std::copy(left_cols.begin(), left_cols.end(), std::back_inserter(new_join_schema));
+    std::copy(right_cols.begin(), right_cols.end(), std::back_inserter(new_join_schema));
+
+    auto optimize_hjoin = std::make_shared<NestedLoopJoinPlanNode>(std::make_shared<Schema>(std::move(new_join_schema)),
+                                                                   std::move(left_child), std::move(right_child),
+                                                                   std::move(predicate), nlj_plan.GetJoinType());
+
+    // step 5. rewrite top projection
+    std::vector<AbstractExpressionRef> new_proj_exprs;
+    for (const auto &expr : exprs) {
+      new_proj_exprs.emplace_back(RewriteExprForProj(expr, std::vector<std::set<size_t>>{proj_indexes}));
+    }
+
+    return std::make_shared<ProjectionPlanNode>(std::make_shared<Schema>(proj_plan.OutputSchema()),
+                                                std::move(new_proj_exprs), std::move(optimize_hjoin));
   }
+
   if (plan->GetType() == PlanType::Aggregation) {
     // const auto &agg_plan = dynamic_cast<const AggregationPlanNode &>(*plan);
   }

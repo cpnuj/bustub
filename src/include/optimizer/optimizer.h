@@ -130,7 +130,11 @@ class Optimizer {
   auto SplitExprsForJoin(std::vector<AbstractExpressionRef> &expressions, size_t left_col_cnt, size_t right_col_cnt)
       -> std::pair<std::map<size_t, TypeId>, std::map<size_t, TypeId>>;
 
-  void ComputeRequiredIdx(const AbstractExpressionRef &expr, std::set<size_t> &indice);
+  void ComputeRequiredIdx(const AbstractExpressionRef &expr, std::set<size_t> &indexes, size_t left_col_cnt,
+                          size_t right_col_cnt);
+
+  auto RewriteExprForProj(const AbstractExpressionRef &expr, const std::vector<std::set<size_t>> &proj_dir)
+      -> AbstractExpressionRef;
 
   auto ComputePushdownInfoForJoin(std::vector<AbstractExpressionRef> &expressions, size_t left_col_cnt,
                                   size_t right_col_cnt)
