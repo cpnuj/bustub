@@ -187,8 +187,39 @@ auto Optimizer::TryPushdownProjection(const AbstractPlanNodeRef &plan, const Abs
     -> AbstractPlanNodeRef {
   BUSTUB_ASSERT(parent->GetType() == PlanType::Projection, "parent plan must be projection");
 
-  const auto &proj_plan = dynamic_cast<const ProjectionPlanNode &>(*parent);
-  const auto &exprs = proj_plan.GetExpressions();
+  const auto &parent_plan = dynamic_cast<const ProjectionPlanNode &>(*parent);
+  const auto &exprs = parent_plan.GetExpressions();
+
+  if (plan->GetType() == PlanType::Projection) {
+    const auto &proj_plan = dynamic_cast<const ProjectionPlanNode &>(*plan);
+    std::set<size_t> proj_indexes;
+    for (const auto &expr : exprs) {
+      ComputeRequiredIdx(expr, proj_indexes, proj_plan.OutputSchema().GetColumnCount(), 0);
+    }
+
+    std::vector<Column> new_cols;
+    std::vector<AbstractExpressionRef> new_child_exprs;
+    for (auto idx : proj_indexes) {
+      const auto &column = proj_plan.OutputSchema().GetColumn(idx);
+      new_cols.emplace_back(column);
+      new_child_exprs.emplace_back(proj_plan.expressions_[idx]);
+    }
+    auto new_child = std::make_shared<ProjectionPlanNode>(
+        std::make_shared<Schema>(new_cols), std::move(new_child_exprs), std::move(proj_plan.children_[0]));
+
+    std::vector<AbstractExpressionRef> new_parent_exprs;
+    std::vector<std::set<size_t>> dir{proj_indexes};
+    for (const auto &expr : exprs) {
+      new_parent_exprs.emplace_back(RewriteExprForProj(expr, dir));
+    }
+
+    return std::make_shared<ProjectionPlanNode>(std::make_shared<Schema>(parent_plan.OutputSchema()),
+                                                std::move(new_parent_exprs), std::move(new_child));
+  }
+
+  if (plan->GetType() == PlanType::Aggregation) {
+    // const auto &agg_plan = dynamic_cast<const AggregationPlanNode &>(*plan);
+  }
 
   //
   // For join node, the father expressions may retrive data from both of our children.
@@ -279,13 +310,10 @@ auto Optimizer::TryPushdownProjection(const AbstractPlanNodeRef &plan, const Abs
       new_proj_exprs.emplace_back(RewriteExprForProj(expr, std::vector<std::set<size_t>>{proj_indexes}));
     }
 
-    return std::make_shared<ProjectionPlanNode>(std::make_shared<Schema>(proj_plan.OutputSchema()),
+    return std::make_shared<ProjectionPlanNode>(std::make_shared<Schema>(parent_plan.OutputSchema()),
                                                 std::move(new_proj_exprs), std::move(optimize_hjoin));
   }
 
-  if (plan->GetType() == PlanType::Aggregation) {
-    // const auto &agg_plan = dynamic_cast<const AggregationPlanNode &>(*plan);
-  }
   // else stop trying
   return parent;
 }
