@@ -148,6 +148,11 @@ class Optimizer {
    */
   auto OptimizePushdownProjection(const AbstractPlanNodeRef &plan) -> AbstractPlanNodeRef;
 
+  /**
+   * @brief optimize dummy scan
+   */
+  auto OptimizeDummyScan(const AbstractPlanNodeRef &plan) -> AbstractPlanNodeRef;
+
   /** Catalog will be used during the planning process. USERS SHOULD ENSURE IT OUTLIVES
    * OPTIMIZER, otherwise it's a dangling reference.
    */

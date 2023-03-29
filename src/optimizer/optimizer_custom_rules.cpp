@@ -190,12 +190,13 @@ auto Optimizer::TryPushdownProjection(const AbstractPlanNodeRef &plan, const Abs
   const auto &parent_plan = dynamic_cast<const ProjectionPlanNode &>(*parent);
   const auto &exprs = parent_plan.GetExpressions();
 
+  std::set<size_t> proj_indexes;
+  for (const auto &expr : exprs) {
+    ComputeRequiredIdx(expr, proj_indexes, plan->OutputSchema().GetColumnCount(), 0);
+  }
+
   if (plan->GetType() == PlanType::Projection) {
     const auto &proj_plan = dynamic_cast<const ProjectionPlanNode &>(*plan);
-    std::set<size_t> proj_indexes;
-    for (const auto &expr : exprs) {
-      ComputeRequiredIdx(expr, proj_indexes, proj_plan.OutputSchema().GetColumnCount(), 0);
-    }
 
     std::vector<Column> new_cols;
     std::vector<AbstractExpressionRef> new_child_exprs;
@@ -206,6 +207,7 @@ auto Optimizer::TryPushdownProjection(const AbstractPlanNodeRef &plan, const Abs
     }
     auto new_child = std::make_shared<ProjectionPlanNode>(
         std::make_shared<Schema>(new_cols), std::move(new_child_exprs), std::move(proj_plan.children_[0]));
+    auto optimized_new_child = OptimizePushdownProjection(new_child);
 
     std::vector<AbstractExpressionRef> new_parent_exprs;
     std::vector<std::set<size_t>> dir{proj_indexes};
@@ -214,11 +216,38 @@ auto Optimizer::TryPushdownProjection(const AbstractPlanNodeRef &plan, const Abs
     }
 
     return std::make_shared<ProjectionPlanNode>(std::make_shared<Schema>(parent_plan.OutputSchema()),
-                                                std::move(new_parent_exprs), std::move(new_child));
+                                                std::move(new_parent_exprs), std::move(optimized_new_child));
   }
 
   if (plan->GetType() == PlanType::Aggregation) {
-    // const auto &agg_plan = dynamic_cast<const AggregationPlanNode &>(*plan);
+    const auto &agg_plan = dynamic_cast<const AggregationPlanNode &>(*plan);
+    size_t group_by_size = agg_plan.GetGroupBys().size();
+
+    std::vector<Column> new_cols;
+    for (size_t i = 0; i < group_by_size; i++) {
+      new_cols.emplace_back(agg_plan.OutputSchema().GetColumn(i));
+    }
+
+    std::vector<AbstractExpressionRef> aggregates;
+    std::vector<AggregationType> agg_types;
+    for (auto idx : proj_indexes) {
+      aggregates.emplace_back(agg_plan.GetAggregateAt(idx));
+      agg_types.emplace_back(agg_plan.GetAggregateTypes()[idx]);
+      new_cols.emplace_back(agg_plan.OutputSchema().GetColumn(idx + group_by_size));
+    }
+
+    auto new_agg_plan = std::make_shared<AggregationPlanNode>(
+        std::make_shared<Schema>(new_cols), std::move(agg_plan.children_[0]), std::move(agg_plan.group_bys_),
+        std::move(aggregates), std::move(agg_types));
+
+    std::vector<AbstractExpressionRef> new_parent_exprs;
+    std::vector<std::set<size_t>> dir{proj_indexes};
+    for (const auto &expr : exprs) {
+      new_parent_exprs.emplace_back(RewriteExprForProj(expr, dir));
+    }
+
+    return std::make_shared<ProjectionPlanNode>(std::make_shared<Schema>(parent_plan.OutputSchema()),
+                                                std::move(new_parent_exprs), std::move(new_agg_plan));
   }
 
   //
@@ -334,6 +363,8 @@ auto Optimizer::OptimizePushdownProjection(const AbstractPlanNodeRef &plan) -> A
 
   return optimized_plan;
 }
+
+auto Optimizer::OptimizeDummyScan(const AbstractPlanNodeRef &plan) -> AbstractPlanNodeRef {}
 
 auto Optimizer::OptimizeCustom(const AbstractPlanNodeRef &plan) -> AbstractPlanNodeRef {
   auto p = plan;
