@@ -54,7 +54,8 @@ auto NestIndexJoinExecutor::Next(Tuple *tuple, RID *rid) -> bool {
 
     if (result.size() == 1) {
       Tuple inner_tuple;
-      assert(tinfo->table_->GetTuple(result[0], &inner_tuple, txn /* check acquire read lock */));
+      bool succ = tinfo->table_->GetTuple(result[0], &inner_tuple, txn /* check acquire read lock */);
+      BUSTUB_ENSURE(succ, "mark delete failed");
       *tuple =
           ConcatTuples(outer_tuple, child_executor_->GetOutputSchema(), inner_tuple, tinfo->schema_, GetOutputSchema());
       return true;

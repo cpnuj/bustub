@@ -13,7 +13,9 @@
 #pragma once
 
 #include <memory>
+#include <unordered_map>
 #include <utility>
+#include <vector>
 
 #include "common/util/hash_util.h"
 #include "execution/executor_context.h"
@@ -77,8 +79,8 @@ class HashJoinExecutor : public AbstractExecutor {
   std::unordered_map<Value, std::vector<Tuple>, ValueHash, ValueEqual> table_{};
   /** The left tuples and a ref to right tuples to join */
   std::vector<std::pair<Tuple, std::vector<Tuple> *>> left_tuples_;
-  size_t left_ptr;
-  size_t right_ptr;
+  size_t left_ptr_;
+  size_t right_ptr_;
 };
 
 }  // namespace bustub

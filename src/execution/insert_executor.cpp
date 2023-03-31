@@ -40,7 +40,8 @@ auto InsertExecutor::Next([[maybe_unused]] Tuple *tuple, RID *rid) -> bool {
     if (!status) {
       break;
     }
-    assert(tinfo->table_->InsertTuple(child_tuple, rid, txn));
+    bool succ = tinfo->table_->InsertTuple(child_tuple, rid, txn);
+    BUSTUB_ENSURE(succ, "insertion failed");
 
     // insert index
     {

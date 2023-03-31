@@ -61,25 +61,30 @@ void HashJoinExecutor::Init() {
     }
   }
 
-  left_ptr = 0;
-  right_ptr = 0;
+  left_ptr_ = 0;
+  right_ptr_ = 0;
 }
 
 auto HashJoinExecutor::Next(Tuple *tuple, RID *rid) -> bool {
   const auto &left_schema = plan_->GetLeftPlan()->OutputSchema();
   const auto &right_schema = plan_->GetRightPlan()->OutputSchema();
   for (;;) {
-    if (left_ptr >= left_tuples_.size()) {
+    if (left_ptr_ >= left_tuples_.size()) {
       return false;
     }
-    const auto &[left_tuple, to_join] = left_tuples_[left_ptr];
-    if (right_ptr >= to_join->size()) {
-      left_ptr++;
-      right_ptr = 0;
+    const auto &[left_tuple, to_join] = left_tuples_[left_ptr_];
+    if (right_ptr_ >= to_join->size()) {
+      left_ptr_++;
+      right_ptr_ = 0;
+      if (to_join->empty() && plan_->GetJoinType() == JoinType::LEFT) {
+        *tuple =
+            ConcatTuples(left_tuple, left_schema, NullTupleFromSchema(right_schema), right_schema, GetOutputSchema());
+        return true;
+      }
       continue;
     }
-    *tuple = ConcatTuples(left_tuple, left_schema, to_join->at(right_ptr), right_schema, GetOutputSchema());
-    right_ptr++;
+    *tuple = ConcatTuples(left_tuple, left_schema, to_join->at(right_ptr_), right_schema, GetOutputSchema());
+    right_ptr_++;
     return true;
   }
 }

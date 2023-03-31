@@ -13,6 +13,7 @@
 #pragma once
 
 #include <memory>
+#include <utility>
 #include <vector>
 
 #include "execution/executor_context.h"
@@ -66,7 +67,7 @@ struct CompFn {
 
   auto operator()(Tuple &t1, Tuple &t2) const -> bool {
     for (const auto &order_by : order_bys_) {
-      auto [t, expr] = order_by;
+      const auto &[t, expr] = order_by;
       auto v1 = expr->Evaluate(&t1, schema_);
       auto v2 = expr->Evaluate(&t2, schema_);
 

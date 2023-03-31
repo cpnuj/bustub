@@ -1,7 +1,7 @@
-#include "execution/executors/topn_executor.h"
-#include "execution/executors/sort_executor.h"
-
 #include <algorithm>
+
+#include "execution/executors/sort_executor.h"
+#include "execution/executors/topn_executor.h"
 
 namespace bustub {
 

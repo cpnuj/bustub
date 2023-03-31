@@ -105,7 +105,7 @@ class Optimizer {
    */
   auto EstimatedCardinality(const std::string &table_name) -> std::optional<size_t>;
 
-  auto TrySplitPredicates(AbstractExpressionRef predicates) -> std::vector<AbstractExpressionRef>;
+  auto TrySplitPredicates(const AbstractExpressionRef &predicates) -> std::vector<AbstractExpressionRef>;
 
   /**
    * @brief optimize split conjunctive predicates
@@ -147,6 +147,8 @@ class Optimizer {
    * @brief optimize projection pushdown
    */
   auto OptimizePushdownProjection(const AbstractPlanNodeRef &plan) -> AbstractPlanNodeRef;
+
+  static auto IsExprNoColumnVal(const AbstractExpressionRef &expr) -> bool;
 
   /**
    * @brief optimize dummy scan

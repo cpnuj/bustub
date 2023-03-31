@@ -41,7 +41,8 @@ auto DeleteExecutor::Next([[maybe_unused]] Tuple *tuple, RID *rid) -> bool {
     if (!status) {
       break;
     }
-    assert(tinfo->table_->MarkDelete(child_rid, txn));
+    bool succ = tinfo->table_->MarkDelete(child_rid, txn);
+    BUSTUB_ENSURE(succ, "mark delete failed");
 
     // delete index
     {
